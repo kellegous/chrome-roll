@@ -5,6 +5,7 @@ import (
   "http"
   "json"
   "os"
+  "strconv"
   "strings"
   "xml"
 )
@@ -101,7 +102,7 @@ func toSvnLogItems(parser *xml.Parser) ([]*svnLogItem, os.Error) {
   return result, nil
 }
 
-func logRequestPayload(start int, end int, limit int) string {
+func logRequestPayload(start int64, end int64, limit int64) string {
   p := "<?xml version=\"1.0\"?><S:log-report xmlns:S=\"svn:\">"
   p += fmt.Sprintf("<S:start-revision>%d</S:start-revision><S:end-revision>%d</S:end-revision>", start, end)
   if limit > LIMIT_NONE {
@@ -110,7 +111,7 @@ func logRequestPayload(start int, end int, limit int) string {
   return p + "<S:discover-changed-paths/></S:log-report>"
 }
 
-func (l *svnClient) Log(startRev int, endRev int, limit int) ([]*svnLogItem, os.Error) {
+func (l *svnClient) Log(startRev int64, endRev int64, limit int64) ([]*svnLogItem, os.Error) {
   req, err := http.NewRequest(
       "REPORT",
       l.Url,
@@ -135,9 +136,21 @@ type svnLogHandler struct {
 func newSvnLogHandler(url string) *svnLogHandler {
   return &svnLogHandler{newSvnClient(url)}
 }
+
+func stringToInt64(s string, def int64) int64 {
+  v, err := strconv.Atoi64(s)
+  if err != nil {
+    return def
+  }
+  return v
+}
+
 func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
   w.Header().Set("Content-Type", "application/json;charset=utf-8")
-  items, err := h.client.Log(108000, REV_HEAD, LIMIT_NONE)
+  startRev := stringToInt64(r.FormValue("s"), REV_HEAD)
+  endRev := stringToInt64(r.FormValue("e"), REV_FIRST)
+  limit := stringToInt64(r.FormValue("l"), 10)
+  items, err := h.client.Log(startRev, endRev, limit)
   if err != nil {
     // TODO: Wrong.
     panic(err)
@@ -151,6 +164,7 @@ func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 3 - Create background poller.
 func main() {
   http.Handle("/chrome/", newSvnLogHandler("http://src.chromium.org/svn/trunk"))
+  http.Handle("/", http.FileServer(http.Dir("pub")))
   err := http.ListenAndServe(":6565", nil)
   if err != nil {
     panic(err)
