@@ -1,0 +1,52 @@
+#!/usr/bin/env python2.6
+
+import optparse
+import os
+import subprocess
+import sys
+
+def EmitMakefile(outfile, infiles, stream):
+  stream.write('include $(GOROOT)/src/Make.inc\n\n')
+  stream.write('TARG=%s\n' % outfile)
+  stream.write('GOFILES=\\\n')
+  for f in infiles:
+    stream.write('  %s\\\n' % f)
+  stream.write('\ninclude $(GOROOT)/src/Make.cmd\n')
+
+def RunMake(goroot, makefile):
+  env = os.environ
+  return subprocess.call(
+    ['make', '-f', makefile],
+    env = {
+      'GOROOT' : goroot,
+      'PATH' : '%s:%s' % (os.path.join(goroot, 'bin'), env['PATH'])
+    }) == 0
+
+def GoRun(filename, args):
+  return subprocess.call(['./%s' % filename] + args)
+
+def SplitArgs(args):
+  for i in range(len(args)):
+    if args[i] == '...':
+      return ( args[0:i], args[i + 1:])
+  return ( args, [] )
+
+if __name__ == '__main__':
+  parser = optparse.OptionParser()
+  parser.add_option('--output',
+    dest = 'output',
+    default = 'main',
+    help = '')
+  parser.add_option('--goroot',
+    dest = 'goroot',
+    default = '/Users/knorton/src/go',
+    help = '')
+  options, args = parser.parse_args()
+  files, args = SplitArgs(args)
+  makefile = 'Makefile'
+  with open(makefile, 'w') as mf:
+    EmitMakefile(options.output, files, mf)
+  if not RunMake('/Users/knorton/src/go', makefile):
+    sys.exit(1)
+  os.remove(makefile)
+  sys.exit(GoRun(options.output, args))
