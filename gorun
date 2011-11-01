@@ -46,7 +46,7 @@ if __name__ == '__main__':
   makefile = 'Makefile'
   with open(makefile, 'w') as mf:
     EmitMakefile(options.output, files, mf)
-  if not RunMake('/Users/knorton/src/go', makefile):
+  if not RunMake(options.goroot, makefile):
     sys.exit(1)
   os.remove(makefile)
   sys.exit(GoRun(options.output, args))
