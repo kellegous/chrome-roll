@@ -16,12 +16,8 @@ const (
   LIMIT_NONE = -1
 )
 
-type svnClient struct {
-  Url string
-}
-
 type svnLogItem struct {
-  Revision string
+  Revision int64
   Comment string
   Date string
   Author string
@@ -32,10 +28,6 @@ func newSvnLogItem() *svnLogItem {
   i := &svnLogItem{}
   i.Paths = make([]string, 0)
   return i
-}
-
-func newSvnClient(url string) *svnClient {
-  return &svnClient{url}
 }
 
 func charDataString(data xml.Token) string {
@@ -74,17 +66,20 @@ func toSvnLogItems(parser *xml.Parser) ([]*svnLogItem, os.Error) {
           if err != nil {
             return nil, err
           }
-          item.Revision = charDataString(data)
+          item.Revision, err = strconv.Atoi64(charDataString(data))
+          if err != nil {
+            return nil, err
+          }
         case t.Name.Local == "creator-displayname":
           data, err := parser.Token()
           if err != nil {
             return nil, err
           }
           item.Author = charDataString(data)
-        case t.Name.Local == "modified-path":
-        case t.Name.Local == "added-path":
-        case t.Name.Local == "replaced-path":
-        case t.Name.Local == "deleted-path":
+        case t.Name.Local == "modified-path",
+             t.Name.Local == "added-path",
+             t.Name.Local == "replaced-path",
+             t.Name.Local == "deleted-path":
           data, err := parser.Token()
           if err != nil {
             return nil, err
@@ -111,6 +106,11 @@ func logRequestPayload(start int64, end int64, limit int64) string {
   return p + "<S:discover-changed-paths/></S:log-report>"
 }
 
+// A simple Subversion client that supports on limited log generation.
+type svnClient struct {
+  Url string
+}
+
 func (l *svnClient) Log(startRev int64, endRev int64, limit int64) ([]*svnLogItem, os.Error) {
   req, err := http.NewRequest(
       "REPORT",
@@ -129,12 +129,13 @@ func (l *svnClient) Log(startRev int64, endRev int64, limit int64) ([]*svnLogIte
   return toSvnLogItems(xml.NewParser(res.Body))
 }
 
+// An http.Handler that allows JSON access to log data.
 type svnLogHandler struct {
   client *svnClient
 }
 
 func newSvnLogHandler(url string) *svnLogHandler {
-  return &svnLogHandler{newSvnClient(url)}
+  return &svnLogHandler{&svnClient{url}}
 }
 
 func stringToInt64(s string, def int64) int64 {
