@@ -15,13 +15,21 @@ def EmitMakefile(outfile, infiles, stream):
 
 def RunMake(goroot, makefile):
   env = os.environ
-  return subprocess.call(
+  p = subprocess.Popen(
     ['make', '-f', makefile],
     env = {
       'GOROOT' : goroot,
       'PATH' : '%s:%s' % (os.path.join(goroot, 'bin'), env['PATH'])
-    }) == 0
-
+    },
+    stdout = subprocess.PIPE,
+    stderr = subprocess.PIPE)
+  stdout, stderr = p.communicate()
+  if p.returncode != 0:
+    sys.stderr.write(stderr)
+    sys.stdout.write(stdout)
+    return False
+  return True
+  
 def GoRun(filename, args):
   return subprocess.call(['./%s' % filename] + args)
 
