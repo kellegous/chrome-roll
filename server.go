@@ -4,6 +4,7 @@ import (
   "fmt"
   "http"
   "json"
+  "kellegous"
   "os"
   "strconv"
   "strings"
@@ -165,7 +166,8 @@ func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 3 - Create background poller.
 func main() {
   http.Handle("/chrome/", newSvnLogHandler("http://src.chromium.org/svn/trunk"))
-  http.Handle("/", http.FileServer(http.Dir("pub")))
+  http.Handle("/", kellegous.NewAppHandler(http.Dir("pub")))
+  fmt.Println("Running...")
   err := http.ListenAndServe(":6565", nil)
   if err != nil {
     panic(err)

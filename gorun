@@ -5,31 +5,82 @@ import os
 import subprocess
 import sys
 
-def EmitMakefile(outfile, infiles, stream):
-  stream.write('include $(GOROOT)/src/Make.inc\n\n')
-  stream.write('TARG=%s\n' % outfile)
-  stream.write('GOFILES=\\\n')
-  for f in infiles:
-    stream.write('  %s\\\n' % f)
-  stream.write('\ninclude $(GOROOT)/src/Make.cmd\n')
+# TODO: dependency order is currently a problem. In theory I could parse the
+# imports of each file and build a dependency graph but for now let's just
+# build everything in the order specified ... except for main which is special.
+def CheckGoRoot(goroot):
+  for tool in ['6g', '6l', 'gopack']:
+    if not os.path.exists(tool):
+      return False
+  return True
 
-def RunMake(goroot, makefile):
-  env = os.environ
-  p = subprocess.Popen(
-    ['make', '-f', makefile],
-    env = {
-      'GOROOT' : goroot,
-      'PATH' : '%s:%s' % (os.path.join(goroot, 'bin'), env['PATH'])
-    },
-    stdout = subprocess.PIPE,
-    stderr = subprocess.PIPE)
-  stdout, stderr = p.communicate()
-  if p.returncode != 0:
-    sys.stderr.write(stderr)
-    sys.stdout.write(stdout)
+def DeterminePackage(file):
+  with open(file, 'r') as f:
+    for line in f.xreadlines():
+      line = line.strip()
+      if line.startswith('package'):
+        return line[len('package') + 1:]
+  return None
+
+def Run6g(goroot, files, output, includes):
+  # Build up the command
+  c = ['%s/bin/6g' % goroot, '-o', output]
+  for i in includes:
+    c.append('-I%s' % i)
+  c.extend(files)
+  return subprocess.call(c) == 0
+
+def RunGoPack(goroot, archive, file):
+  return subprocess.call([
+    '%s/bin/gopack' % goroot,
+    'grc',
+    archive,
+    file]) == 0
+
+def Run6l(goroot, file, output, libdirs):
+  c = ['%s/bin/6l' % goroot, '-o', output]
+  for d in libdirs:
+    c.append('-L%s' % d)
+  c.append(file)
+  return subprocess.call(c) == 0
+
+def BuildLib(goroot, dstdir, name, files):
+  out6 = os.path.join(dstdir, '%s.6' % name)
+  outa = os.path.join(dstdir, '%s.a' % name)
+  if not Run6g(goroot, files, out6, [dstdir]):
+    return False
+  if not RunGoPack(goroot, outa, out6):
+    return False
+  # Invoke gopack on all .6 files
+  return True
+
+def BuildApp(goroot, dstdir, name, files):
+  out6 = os.path.join(dstdir, '%s.6' % name)
+  outb = os.path.join(dstdir, name)
+  if not Run6g(goroot, files, out6, [dstdir]):
+    return False
+  if not Run6l(goroot, out6, outb, [dstdir]):
     return False
   return True
-  
+
+def CreateBuild(files):
+  pkgs = []
+  units = {}
+  main = []
+  for file in files:
+    pkg = DeterminePackage(file)
+    assert pkg is not None
+    # Handle main in a special sort of way.
+    if pkg == 'main':
+      main.append(file)
+      continue
+
+    if not units.has_key(pkg):
+      pkgs.append(pkg)
+      units[pkg] = []
+    units[pkg].append(file)
+  return ([(p, units[p]) for p in pkgs], main)
+
 def GoRun(filename, args):
   return subprocess.call(['./%s' % filename] + args)
 
@@ -49,12 +100,18 @@ if __name__ == '__main__':
     dest = 'goroot',
     default = '/Users/knorton/src/go',
     help = '')
+  parser.add_option('--build-dir',
+    dest = 'build_dir',
+    default = 'out',
+    help = '')
   options, args = parser.parse_args()
   files, args = SplitArgs(args)
-  makefile = 'Makefile'
-  with open(makefile, 'w') as mf:
-    EmitMakefile(options.output, files, mf)
-  if not RunMake(options.goroot, makefile):
-    sys.exit(1)
-  os.remove(makefile)
-  sys.exit(GoRun(options.output, args))
+
+  libs, main = CreateBuild(files)
+  if not os.path.exists(options.build_dir):
+    os.makedirs(options.build_dir)
+
+  for name, files in libs:
+    BuildLib(options.goroot, options.build_dir, name, files)
+  BuildApp(options.goroot, options.build_dir, options.output, main)
+  sys.exit(GoRun(os.path.join(options.build_dir, options.output), args))
