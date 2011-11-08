@@ -1,0 +1,83 @@
+body {
+  font-family: 'Open Sans', sans-serif;
+  background: #fff;
+  font-weight: 300;
+}
+
+#team {
+  width: 1005px;
+  margin: 20px auto;
+  position: relative;
+}
+#team > #icon {
+  position: absolute;
+  background: url(img/icon-gold.png) no-repeat left top;
+  width: 215px;
+  height: 174px;
+  margin-left: -80px;
+}
+#team > #text {
+  font-size: 64pt;
+  line-height: 58pt;
+  border-bottom: 1px solid #000;
+  padding-left: 100px;
+  padding-top: 85px;
+  /*
+  */
+  color: #000;
+}
+
+#badge {
+  position: absolute;
+  bottom: 15px;
+  right: 0;
+}
+#badge-label {
+  font-size: 24pt;
+  text-align: center;
+}
+#badge-count {
+  font-size: 84pt;
+  line-height: 56pt;
+}
+  
+
+#kittens{
+  display: -webkit-box;
+  -webkit-box-pack: center;
+  margin-top: 50px;
+}
+.kitten {
+  background-color: #333;
+  -webkit-border-radius: 8px;
+  -webkit-box-shadow: 5px 5px 5px rgba(0, 0, 0, 0.4);
+  width: 185px;
+  margin: 10px;
+  background-repeat: no-repeat;
+  background-position: left top;
+  text-align: center;
+}
+.kitten > .text {
+  color: #fff;
+  font-size: 24pt;
+  padding: 230px 10px 0 10px;
+  text-align: center;
+  text-shadow: 2px 2px 2px #000;
+}
+.kitten > .badge {
+  display: inline-block;
+  margin: 10px 0;
+  font-size: 48pt;
+  color: #fff;
+  text-shadow: 2px 2px 2px #000;
+/*
+  width: 60px;
+  height: 60px;
+  -webkit-border-radius: 15px;
+  border: 1px solid #dcdcdc;
+  font-size: 32pt;
+  text-align: center;
+  background: -webkit-gradient( linear, left top, left bottom, color-stop(0.05, #EDEDED), color-stop(1, #DFDFDF) );
+  -webkit-box-shadow: inset 0px 1px 0px 0px #ffffff;
+*/
+}
