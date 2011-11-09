@@ -1,19 +1,22 @@
 package main
 
 import (
+  "flag"
 	"fmt"
+  "gosqlite.googlecode.com/hg/sqlite"
 	"http"
 	"json"
 	"kellegous"
-	"os"
 	"strconv"
 	"svn"
+  "websocket"
 )
 
 const (
 	webkitSvnUrl           = "http://svn.webkit.org/repository/webkit/trunk"
 	webkitEarliestRevision = 48167
-	modelStoreFile         = "data/model.json"
+	modelDatabaseFile      = "db/webkit.sqlite"
+
 )
 
 // Model:
@@ -21,51 +24,145 @@ const (
 // mapping from username => commits.
 // last seen commit.
 
-type model struct {
-	RecentCommits     []*svn.SvnLogItem
-	KittenCommits     map[string][]int64
-	LastKnownRevision int64
+type kitten struct {
+  Email string
+  Name string
+  Commits []int64
+}
+func (k *kitten) add(commit int64) {
+  k.Commits = append(k.Commits, commit)
 }
 
-func loadModelFromFile(filename string) *model {
-	file, err := os.Open(modelStoreFile)
-	if err != nil {
-		return nil
-	}
+type store struct {
+  Conn *sqlite.Conn
+}
+func newStore(filename string) (*store, error) {
+  c, err := sqlite.Open(filename)
+  if err != nil {
+    return nil, err
+  }
+  for _, s := range databaseSetupScript {
+    if err := c.Exec(s); err != nil {
+      return nil, err
+    }
+  }
+  return &store{c}, nil
+}
+func (s *store) kittens() ([]*kitten, error) {
+  kits := make([]*kitten, 0)
+  q := "SELECT a.Email, a.Name, b.Revision FROM kitten a LEFT OUTER JOIN kittencommit b ON a.Email = b.Email ORDER BY a.Email, b.Revision"
+  stmt, err := s.Conn.Prepare(q)
+  if err != nil {
+    return nil, err
+  }
 
-	model := &model{}
-	err = json.NewDecoder(file).Decode(&model)
-	if err != nil {
-		return nil
-	}
+  if err := stmt.Exec(); err != nil {
+    return nil, err
+  }
 
-	return model
+  var kit *kitten = nil
+  var email, name, revision string
+
+  for i := 0; stmt.Next(); i++ {
+    if err := stmt.Scan(&email, &name, &revision); err != nil {
+      fmt.Println(err)
+      return nil, err
+    }
+
+    if kit == nil || kit.Email != email {
+      kit = &kitten{email, name, []int64{}}
+      kits = append(kits, kit)
+    }
+
+    if revision != "" {
+	    r, err := strconv.Atoi64(revision)
+      if err != nil {
+        return nil, err
+      }
+      kit.add(r)
+    }
+  }
+
+  return kits, nil
+}
+func (s *store) lastCommit() (int64, error) {
+  q := "SELECT Value FROM setting WHERE Name = 'last-revision'"
+  stmt, err := s.Conn.Prepare(q)
+  if err != nil {
+    return 0, err
+  }
+
+  if err := stmt.Exec(); err != nil {
+    return 0, err
+  }
+
+  if !stmt.Next() {
+    return 0, nil
+  }
+
+  var revision int64
+  if err := stmt.Scan(&revision); err != nil {
+    return 0, err
+  }
+
+  return revision, nil
+}
+func (s *store) setLastCommit(revision int64) error {
+  q := "INSERT OR REPLACE INTO setting VALUES ('last-revision', ?1)"
+  if err := s.Conn.Exec(q, revision); err != nil {
+    return err
+  }
+  return nil
+}
+func (s *store) addKittenCommit(name string, revision int64) error {
+  q := "INSERT OR REPLACE INTO kittencommit VALUES (?1, ?2)"
+  if err := s.Conn.Exec(q, name, revision); err != nil {
+    return err
+  }
+  return nil
+}
+func (s *store) shutdown() {
+  s.Conn.Close()
 }
 
-func loadModel(n int64) (*model, error) {
-	// try to load the model from the storage file
-	if fromFile := loadModelFromFile(modelStoreFile); fromFile != nil {
-		return fromFile, nil
-	}
+func startModel(ch chan *websocket.Conn, svnUrl string, storeFile string) error {
+  sql, err := newStore(storeFile)
+  if err != nil {
+    return err
+  }
 
-	// Build up the model data from svn and
-	// return the model when it's in a good
-	// state.
-	rev := webkitEarliestRevision
-	count := 99594 - rev
-	fmt.Printf("fetching %d revisions over %d queries.\n", count, int64(count)/n)
-	client := &svn.SvnClient{webkitSvnUrl}
-	items, err := client.Log(svn.REV_HEAD, svn.REV_HEAD, n)
-	if err != nil {
-		return nil, err
-	}
+  rev, err := sql.lastCommit()
+  if err != nil {
+    return err
+  }
 
-	for _, item := range items {
-		fmt.Printf("Revision: %d\n", item.Revision)
-	}
+  scm := &svn.SvnClient{svnUrl}
+  _, err = scm.Log(rev, svn.REV_FIRST, 100)
+  if err != nil {
+    return err
+  }
 
-	return nil, nil
+  go func() {
+    cons := make([]*websocket.Conn, 0)
+    for {
+      select {
+      case c :=  <-ch:
+        cons = append(cons, c)
+        fmt.Println("We have us a connection.")
+        // Send the client the data dude.
+      // TODO: Add Case for timeout here.
+      }
+    }
+  }()
+  return nil
 }
+
+  // for last-commit to head
+  //   for each kitten
+  //     if kitten in commit
+  //       add kittencommit to store.
+  //   send notification of commit
+  //   update last-commit
 
 // An http.Handler that allows JSON access to log data.
 type svnLogHandler struct {
@@ -101,21 +198,58 @@ func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 1 - Create http server.
 // 2 - Turn logic into talking to svn servers into simple component.
 // 3 - Create background poller.
+var flagBuildDatabase = flag.Bool("build-database", false, "Creates the webkit database and then exits.")
+
+func showKittens(store *store) {
+  kits, err := store.kittens()
+  if err != nil {
+    panic(err)
+  }
+  for _, k := range kits {
+    fmt.Println(k)
+  }
+}
+
 func main() {
-	// fmt.Printf("sqlite: %s\n", sqlite.Version())
-	loadModel(10)
+  flag.Parse()
+
+  // channel allows websockets to attach to model.
+  wsChan := make(chan *websocket.Conn)
+  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile)
+  if err != nil {
+    panic(err)
+  }
 
 	http.Handle("/chrome/", newSvnLogHandler("http://src.chromium.org/svn/trunk"))
 	http.Handle("/", kellegous.NewAppHandler(http.Dir("pub")))
-
-	// Setup /atl
-	/*
-	  http.Handle("/atl/str", websocket.Handler(func(ws *websocket.Conn) {
-	  })
-	*/
+	http.Handle("/atl/str", websocket.Handler(func(ws *websocket.Conn) {
+    wsChan <- ws
+  }))
 	fmt.Println("Running...")
-	err := http.ListenAndServe(":6565", nil)
+	err = http.ListenAndServe(":6565", nil)
 	if err != nil {
 		panic(err)
 	}
 }
+
+var databaseSetupScript = []string{`
+  CREATE TABLE IF NOT EXISTS kitten (
+    Email varchar(255) PRIMARY KEY,
+    Name varchar(255)
+  );`,
+  `
+  CREATE TABLE IF NOT EXISTS kittencommit (
+    Email varchar(255),
+    Revision integer,
+    CONSTRAINT _key PRIMARY KEY (Email, Revision)
+  );`,
+  `
+  CREATE TABLE IF NOT EXISTS setting (
+    Name varchar(255) PRIMARY KEY,
+    Value varchar(255)
+  );`,
+  `INSERT OR REPLACE INTO kitten VALUES('knorton@google.com', 'Kelly Norton');`,
+  `INSERT OR REPLACE INTO kitten VALUES('jgw@google.com', 'Joel Webber');`,
+  `INSERT OR REPLACE INTO kitten VALUES('schenney@google.com', 'Stephen Chenney');`,
+  `INSERT OR REPLACE INTO kitten VALUES('pdr@google.com', 'Philip Rogers');`,
+  `INSERT OR REPLACE INTO kitten VALUES('fmalita@google.com', 'Florin Malita');`}
