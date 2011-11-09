@@ -143,6 +143,11 @@ func startModel(ch chan *websocket.Conn, svnUrl string, storeFile string) error 
   }
 
   go func() {
+    // TODO: Setup a timeout that is initially really low.
+    // we will then enter the loop with low time outs and
+    // incrementally get up-to-date. When we make it to head,
+    // we'll then crank up the timeout to our polling interval
+    // and proceed from there.
     cons := make([]*websocket.Conn, 0)
     for {
       select {
