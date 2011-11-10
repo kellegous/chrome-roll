@@ -3,8 +3,8 @@ package kellegous
 import (
 	"bytes"
 	"fmt"
-	"http"
 	"io"
+	"net/http"
 	"path"
 	"path/filepath"
 	"os"

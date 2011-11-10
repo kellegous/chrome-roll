@@ -1,12 +1,12 @@
 package svn
 
 import (
+	"encoding/xml"
 	"fmt"
-	"http"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
-	"xml"
 )
 
 const (
