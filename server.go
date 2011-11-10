@@ -286,6 +286,30 @@ func (m *model) update() error {
 }
 
 func (m *model) rebuildKittenChangeTable() error {
+  log.Printf("rebuilding kitten change table\n")
+  changes, err := m.Store.changes(-1)
+  if err != nil {
+    return err
+  }
+
+  for _, change := range changes {
+    for _, kitten := range m.Kittens {
+      if !isKittenChange(kitten, change.Author, change.Comment) {
+        continue
+      }
+
+      log.Printf("  %s made r%d\n", kitten.Email, change.Revision)
+      err = m.Store.insertKittenChange(kitten.Email, change.Revision)
+      if err != nil {
+        return err
+      }
+    }
+  }
+
+  if err := m.reload(); err != nil {
+    return err
+  }
+
   return nil
 }
 
@@ -312,7 +336,7 @@ func (m *model) notify(n interface{}) error {
   return nil
 }
 
-func startModel(ch chan *sub, svnUrl string, storeFile string) error {
+func startModel(ch chan *sub, svnUrl string, storeFile string, rebuildChangeTable bool) error {
   log.Printf("loading model (%s, %s)\n", storeFile, svnUrl)
   model, err := loadModel(storeFile, svnUrl)
   if err != nil {
@@ -322,6 +346,12 @@ func startModel(ch chan *sub, svnUrl string, storeFile string) error {
   log.Printf("updating model to HEAD\n")
   if err := model.update(); err != nil {
     return err
+  }
+
+  if rebuildChangeTable {
+    if err := model.rebuildKittenChangeTable(); err != nil {
+      return err
+    }
   }
 
   go func() {
@@ -383,12 +413,14 @@ func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 var flagAddr = flag.String("addr", ":6565", "bind address for http server")
 
+var flagRebuildChangeTable = flag.Bool("rebuild-change-table", false, "")
+
 func main() {
   flag.Parse()
 
   // channel allows websockets to attach to model.
   wsChan := make(chan *sub)
-  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile)
+  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile, *flagRebuildChangeTable)
   if err != nil {
     panic(err)
   }
