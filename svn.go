@@ -15,7 +15,7 @@ const (
 	LIMIT_NONE = -1
 )
 
-type SvnLogItem struct {
+type LogItem struct {
 	Revision int64
 	Comment  string
 	Date     string
@@ -23,8 +23,8 @@ type SvnLogItem struct {
 	Paths    []string
 }
 
-func newSvnLogItem() *SvnLogItem {
-	i := &SvnLogItem{}
+func newLogItem() *LogItem {
+	i := &LogItem{}
 	i.Paths = make([]string, 0)
 	return i
 }
@@ -33,9 +33,9 @@ func charDataString(data xml.Token) string {
 	return string([]byte(data.(xml.CharData)))
 }
 
-func toSvnLogItems(parser *xml.Parser) ([]*SvnLogItem, error) {
-	result := make([]*SvnLogItem, 0)
-	var item *SvnLogItem
+func toLogItems(parser *xml.Parser) ([]*LogItem, error) {
+	result := make([]*LogItem, 0)
+	var item *LogItem
 	for {
 		tok, err := parser.Token()
 		if err == io.EOF {
@@ -47,7 +47,7 @@ func toSvnLogItems(parser *xml.Parser) ([]*SvnLogItem, error) {
 		case xml.StartElement:
 			switch {
 			case t.Name.Local == "log-item":
-				item = newSvnLogItem()
+				item = newLogItem()
 			case t.Name.Local == "comment":
 				data, err := parser.Token()
 				if err != nil {
@@ -106,11 +106,19 @@ func logRequestPayload(start int64, end int64, limit int64) string {
 }
 
 // A simple Subversion client that supports on limited log generation.
-type SvnClient struct {
+type Client struct {
 	Url string
 }
 
-func (l *SvnClient) Log(startRev int64, endRev int64, limit int64) ([]*SvnLogItem, error) {
+func (l *Client) Head() (*LogItem, error) {
+  items, err := l.Log(REV_HEAD, REV_HEAD, 1)
+  if err != nil {
+    return nil, err
+  }
+  return items[0], nil
+}
+
+func (l *Client) Log(startRev int64, endRev int64, limit int64) ([]*LogItem, error) {
 	req, err := http.NewRequest(
 		"REPORT",
 		l.Url,
@@ -125,5 +133,5 @@ func (l *SvnClient) Log(startRev int64, endRev int64, limit int64) ([]*SvnLogIte
 		return nil, err
 	}
 
-	return toSvnLogItems(xml.NewParser(res.Body))
+	return toLogItems(xml.NewParser(res.Body))
 }

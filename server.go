@@ -7,50 +7,61 @@ import (
   "gosqlite.googlecode.com/hg/sqlite"
 	"kellegous"
 	"net/http"
+  "os"
+  "path/filepath"
+  "regexp"
 	"strconv"
 	"svn"
+  "time"
   "websocket"
 )
 
 const (
 	webkitSvnUrl           = "http://svn.webkit.org/repository/webkit/trunk"
-	webkitEarliestRevision = 48167
+	webkitEarliestRevision int64 = 48167
 	modelDatabaseFile      = "db/webkit.sqlite"
 
 )
 
-// Model:
-// Last N WebKit commits.
-// mapping from username => commits.
-// last seen commit.
-
 type kitten struct {
   Email string
   Name string
-  Commits []int64
+  Revisions []int64
 }
-func (k *kitten) add(commit int64) {
-  k.Commits = append(k.Commits, commit)
+func (k *kitten) add(revision int64) {
+  k.Revisions = append(k.Revisions, revision)
 }
 
 type store struct {
   Conn *sqlite.Conn
 }
+
 func newStore(filename string) (*store, error) {
+  // make sure the parent directory exists
+  dir, _ := filepath.Split(filename)
+  if s, _ := os.Stat(dir); s == nil {
+    os.MkdirAll(dir, 0700)
+  }
+
+  // open the database
   c, err := sqlite.Open(filename)
   if err != nil {
     return nil, err
   }
+
+  // execute all commands in the setup script
   for _, s := range databaseSetupScript {
     if err := c.Exec(s); err != nil {
       return nil, err
     }
   }
+
   return &store{c}, nil
 }
+
 func (s *store) kittens() ([]*kitten, error) {
   kits := make([]*kitten, 0)
-  q := "SELECT a.Email, a.Name, b.Revision FROM kitten a LEFT OUTER JOIN kittencommit b ON a.Email = b.Email ORDER BY a.Email, b.Revision"
+  q := "SELECT a.Email, a.Name, b.Revision FROM kitten a LEFT OUTER JOIN kittenchange b ON a.Email = b.Email ORDER BY a.Email, b.Revision"
   stmt, err := s.Conn.Prepare(q)
   if err != nil {
     return nil, err
@@ -65,7 +76,6 @@ func (s *store) kittens() ([]*kitten, error) {
 
   for i := 0; stmt.Next(); i++ {
     if err := stmt.Scan(&email, &name, &revision); err != nil {
-      fmt.Println(err)
       return nil, err
     }
 
@@ -85,62 +95,125 @@ func (s *store) kittens() ([]*kitten, error) {
 
   return kits, nil
 }
-func (s *store) lastCommit() (int64, error) {
-  q := "SELECT Value FROM setting WHERE Name = 'last-revision'"
+
+func (s *store) changes(limit int) ([]*change, error) {
+  changes := []*change{}
+  q := fmt.Sprintf("SELECT Revision, Comment, Date, Author FROM change ORDER BY Revision DESC LIMIT %d", limit)
   stmt, err := s.Conn.Prepare(q)
   if err != nil {
-    return 0, err
+    return nil, err
   }
 
   if err := stmt.Exec(); err != nil {
-    return 0, err
-  }
-
-  if !stmt.Next() {
-    return 0, nil
+    return nil, err
   }
 
   var revision int64
-  if err := stmt.Scan(&revision); err != nil {
-    return 0, err
+  var comment, date, author string
+
+  for ; stmt.Next(); {
+    if err := stmt.Scan(&revision, &comment, &date, &author); err != nil {
+      return nil, err
+    }
+
+    changes = append(changes, &change{revision, comment, date, author})
   }
 
-  return revision, nil
+  return changes, nil
 }
-func (s *store) setLastCommit(revision int64) error {
-  q := "INSERT OR REPLACE INTO setting VALUES ('last-revision', ?1)"
-  if err := s.Conn.Exec(q, revision); err != nil {
+
+func (s *store) insertCommit(revision int64, comment, date, author string) error {
+  q := "INSERT OR REPLACE INTO change VALUES (?1, ?2, ?3, ?4)"
+  if err := s.Conn.Exec(q, revision, comment, date, author); err != nil {
     return err
   }
   return nil
 }
-func (s *store) addKittenCommit(name string, revision int64) error {
-  q := "INSERT OR REPLACE INTO kittencommit VALUES (?1, ?2)"
-  if err := s.Conn.Exec(q, name, revision); err != nil {
+
+func (s *store) insertKittenCommit(email string, revision int64) error {
+  q := "INSERT OR REPLACE INTO kittenchange VALUES (?1, ?2)"
+  if err := s.Conn.Exec(q, email, revision); err != nil {
     return err
   }
   return nil
 }
+
+type change struct {
+  Revision int64
+  Comment string
+  Date string
+  Author string
+}
+
 func (s *store) shutdown() {
   s.Conn.Close()
 }
 
+var patternForPatchBy = regexp.MustCompile("Patch by .* <(.*)> on")
+var patternForOldLogs = regexp.MustCompile("\n\\d{4}-\\d{2}\\d{2}  .*  <(.*)>")
+
+func isKittenChange(c *change, email string) bool {
+  if c.Author == email {
+    return true
+  }
+
+  for _, m := range patternForPatchBy.FindAllStringSubmatch(c.Comment, -1) {
+    if m[1] == email {
+      return true
+    }
+  }
+
+  for _, m := range patternForOldLogs.FindAllStringSubmatch(c.Comment, -1) {
+    if m[1] == email {
+      return true
+    }
+  }
+
+  return false
+  // Look for Date - name - email format
+}
+
+func update(st *store, sc *svn.Client, start int64) (int64, bool, error) {
+  head, err := sc.Head()
+  if err != nil {
+    return 0, false, nil
+  }
+
+  items, err := sc.Log(start, head.Revision, 100)
+  if err != nil {
+    return 0, false, nil
+  }
+
+  var lastRev int64 = 0
+  for _, i := range items {
+    fmt.Println(i.Revision)
+    lastRev = i.Revision
+    err = st.insertCommit(i.Revision, i.Comment, i.Date, i.Author)
+    if err != nil {
+      return lastRev, false, err
+    }
+  }
+
+  return lastRev, lastRev == head.Revision, nil
+}
+
 func startModel(ch chan *websocket.Conn, svnUrl string, storeFile string) error {
-  sql, err := newStore(storeFile)
+  st, err := newStore(storeFile)
   if err != nil {
     return err
   }
 
-  rev, err := sql.lastCommit()
+  changes, err := st.changes(100)
   if err != nil {
     return err
   }
 
-  scm := &svn.SvnClient{svnUrl}
-  _, err = scm.Log(rev, svn.REV_FIRST, 100)
-  if err != nil {
-    return err
+  head := webkitEarliestRevision
+  if len(changes) > 0 {
+    head = changes[0].Revision
   }
+
+  sc := &svn.Client{svnUrl}
 
   go func() {
     // TODO: Setup a timeout that is initially really low.
@@ -153,9 +226,14 @@ func startModel(ch chan *websocket.Conn, svnUrl string, storeFile string) error 
       select {
       case c :=  <-ch:
         cons = append(cons, c)
-        fmt.Println("We have us a connection.")
-        // Send the client the data dude.
-      // TODO: Add Case for timeout here.
+        // Send the model state to the client.
+      case <- time.After(1e9):
+        // Perform incremental update.
+        _, _, err := update(st, sc, head)
+        if err != nil {
+          fmt.Println(err)
+        }
+        return
       }
     }
   }()
@@ -171,11 +249,11 @@ func startModel(ch chan *websocket.Conn, svnUrl string, storeFile string) error 
 
 // An http.Handler that allows JSON access to log data.
 type svnLogHandler struct {
-	client *svn.SvnClient
+	client *svn.Client
 }
 
 func newSvnLogHandler(url string) *svnLogHandler {
-	return &svnLogHandler{&svn.SvnClient{url}}
+	return &svnLogHandler{&svn.Client{url}}
 }
 
 func stringToInt64(s string, def int64) int64 {
@@ -205,22 +283,12 @@ func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 3 - Create background poller.
 var flagBuildDatabase = flag.Bool("build-database", false, "Creates the webkit database and then exits.")
 
-func showKittens(store *store) {
-  kits, err := store.kittens()
-  if err != nil {
-    panic(err)
-  }
-  for _, k := range kits {
-    fmt.Println(k)
-  }
-}
-
 func main() {
   flag.Parse()
 
   // channel allows websockets to attach to model.
   wsChan := make(chan *websocket.Conn)
-  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile)
+  err = startModel(wsChan, webkitSvnUrl, modelDatabaseFile)
   if err != nil {
     panic(err)
   }
@@ -243,15 +311,17 @@ var databaseSetupScript = []string{`
     Name varchar(255)
   );`,
   `
-  CREATE TABLE IF NOT EXISTS kittencommit (
+  CREATE TABLE IF NOT EXISTS kittenchange (
     Email varchar(255),
     Revision integer,
     CONSTRAINT _key PRIMARY KEY (Email, Revision)
   );`,
-  `
-  CREATE TABLE IF NOT EXISTS setting (
-    Name varchar(255) PRIMARY KEY,
-    Value varchar(255)
+ ` 
+  CREATE TABLE IF NOT EXISTS change (
+    Revision INTEGER PRIMARY KEY,
+    Comment TEXT,
+    Date VARCHAR(255),
+    Author VARCHAR(255)
   );`,
   `INSERT OR REPLACE INTO kitten VALUES('knorton@google.com', 'Kelly Norton');`,
   `INSERT OR REPLACE INTO kitten VALUES('jgw@google.com', 'Joel Webber');`,
