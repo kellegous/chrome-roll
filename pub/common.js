@@ -35,6 +35,10 @@ Node.prototype.update = function(callback) {
   callback(this);
   return this;
 }
+Node.prototype.remove = function() {
+  this.parentNode.removeChild(this);
+  return this;
+}
 NodeList.prototype.forEach = function(f) {
   for (var i = 0, n = this.length; i < n; ++i)
     f(this[i]);
@@ -44,4 +48,10 @@ NodeList.prototype.map = function(f) {
   for (var i = 0, n = this.length; i < n; ++i)
     r.push(f(this[i]));
   return r;
+}
+String.prototype.endsWith = function(suffix) {
+  return this.indexOf(suffix, this.length - suffix.length) != -1;
+}
+String.prototype.startsWith = function(prefix) {
+  return this.substring(0, prefix.length) == prefix;
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
   "gosqlite.googlecode.com/hg/sqlite"
 	"kellegous"
+  "log"
 	"net/http"
   "os"
   "path/filepath"
@@ -20,7 +21,7 @@ const (
 	webkitSvnUrl           = "http://svn.webkit.org/repository/webkit/trunk"
 	webkitEarliestRevision int64 = 48167
 	modelDatabaseFile      = "db/webkit.sqlite"
-
+  webkitSvnPollingInterval = 1 // minutes
 )
 
 type kitten struct {
@@ -28,6 +29,7 @@ type kitten struct {
   Name string
   Revisions []int64
 }
+
 func (k *kitten) add(revision int64) {
   k.Revisions = append(k.Revisions, revision)
 }
@@ -98,7 +100,10 @@ func (s *store) kittens() ([]*kitten, error) {
 
 func (s *store) changes(limit int) ([]*change, error) {
   changes := []*change{}
-  q := fmt.Sprintf("SELECT Revision, Comment, Date, Author FROM change ORDER BY Revision DESC LIMIT %d", limit)
+  q := "SELECT Revision, Comment, Date, Author FROM change ORDER BY Revision DESC"
+  if limit >= 0 {
+    q += fmt.Sprintf(" LIMIT %d", limit)
+  }
   stmt, err := s.Conn.Prepare(q)
   if err != nil {
     return nil, err
@@ -122,7 +127,7 @@ func (s *store) changes(limit int) ([]*change, error) {
   return changes, nil
 }
 
-func (s *store) insertCommit(revision int64, comment, date, author string) error {
+func (s *store) insertChange(revision int64, comment, date, author string) error {
   q := "INSERT OR REPLACE INTO change VALUES (?1, ?2, ?3, ?4)"
   if err := s.Conn.Exec(q, revision, comment, date, author); err != nil {
     return err
@@ -130,7 +135,7 @@ func (s *store) insertCommit(revision int64, comment, date, author string) error
   return nil
 }
 
-func (s *store) insertKittenCommit(email string, revision int64) error {
+func (s *store) insertKittenChange(email string, revision int64) error {
   q := "INSERT OR REPLACE INTO kittenchange VALUES (?1, ?2)"
   if err := s.Conn.Exec(q, email, revision); err != nil {
     return err
@@ -150,102 +155,196 @@ func (s *store) shutdown() {
 }
 
 var patternForPatchBy = regexp.MustCompile("Patch by .* <(.*)> on")
-var patternForOldLogs = regexp.MustCompile("\n\\d{4}-\\d{2}\\d{2}  .*  <(.*)>")
+var patternForOldLogs = regexp.MustCompile("^\\d{4}-\\d{2}-\\d{2}  .*  <(.*)>")
 
-func isKittenChange(c *change, email string) bool {
-  if c.Author == email {
+func isKittenChange(kitten *kitten, author, comment string) bool {
+  if author == kitten.Email {
     return true
   }
 
-  for _, m := range patternForPatchBy.FindAllStringSubmatch(c.Comment, -1) {
-    if m[1] == email {
+  for _, m := range patternForPatchBy.FindAllStringSubmatch(comment, -1) {
+    if m[1] == kitten.Email {
       return true
     }
   }
 
-  for _, m := range patternForOldLogs.FindAllStringSubmatch(c.Comment, -1) {
-    if m[1] == email {
+  for _, m := range patternForOldLogs.FindAllStringSubmatch(comment, -1) {
+    if m[1] == kitten.Email {
       return true
     }
   }
 
   return false
-  // Look for Date - name - email format
 }
 
-func update(st *store, sc *svn.Client, start int64) (int64, bool, error) {
-  head, err := sc.Head()
+type changeMessage struct {
+  Type string
+  Change *change
+  Kittens []string
+}
+
+func newChangeMessage(change *change, kittens []string) *changeMessage {
+  return &changeMessage{"change", change, kittens};
+}
+
+type connectMessage struct {
+  Type string
+  Changes []*change
+  Kittens []*kitten
+}
+
+func newConnectMessage(changes []*change, kittens []*kitten) *connectMessage {
+  return &connectMessage{"connect", changes, kittens};
+}
+
+type model struct {
+  Kittens []*kitten
+  Changes []*change
+  Store *store
+  Svn *svn.Client
+  Conns map[*websocket.Conn]int
+}
+
+func loadModel(sqlFilename, svnUrl string) (*model, error) {
+  m := &model{}
+
+  m.Svn = &svn.Client{svnUrl}
+
+  store, err := newStore(sqlFilename)
   if err != nil {
-    return 0, false, nil
+    return nil, err
+  }
+  m.Store = store
+
+  m.Conns = map[*websocket.Conn]int{}
+
+  if err := m.reload(); err != nil {
+    return nil, err
   }
 
-  items, err := sc.Log(start, head.Revision, 100)
+  return m, nil
+}
+
+func (m *model) reload() error {
+  kittens, err := m.Store.kittens()
   if err != nil {
-    return 0, false, nil
+    return err
+  }
+  m.Kittens = kittens
+
+  changes, err := m.Store.changes(100)
+  if err != nil {
+    return err
+  }
+  m.Changes = changes
+  return nil
+}
+
+func (m *model) update() error {
+  latestRev := webkitEarliestRevision
+  if len(m.Changes) != 0 {
+    latestRev = m.Changes[0].Revision
   }
 
-  var lastRev int64 = 0
-  for _, i := range items {
-    fmt.Println(i.Revision)
-    lastRev = i.Revision
-    err = st.insertCommit(i.Revision, i.Comment, i.Date, i.Author)
-    if err != nil {
-      return lastRev, false, err
+  items, err := m.Svn.Log(latestRev, svn.REV_HEAD, svn.LIMIT_NONE)
+  if err != nil {
+    return err
+  }
+
+  for _, item := range items {
+    if item.Revision == latestRev {
+      continue
     }
+
+    log.Printf("  update with r%d by %s\n", item.Revision, item.Author)
+    n := newChangeMessage(&change{item.Revision, item.Comment, item.Date, item.Author}, []string{})
+    err := m.Store.insertChange(item.Revision, item.Comment, item.Date, item.Author)
+    if err != nil {
+      return err
+    }
+
+    for _, kitten := range m.Kittens {
+      if !isKittenChange(kitten, item.Author, item.Comment) {
+        continue
+      }
+
+      n.Kittens = append(n.Kittens, kitten.Email)
+      err := m.Store.insertKittenChange(kitten.Email, item.Revision)
+      if err != nil {
+        return err
+      }
+    }
+
+    m.notify(n)
   }
 
-  return lastRev, lastRev == head.Revision, nil
+  if err := m.reload(); err != nil {
+    return err
+  }
+
+  return nil
 }
 
-func startModel(ch chan *websocket.Conn, svnUrl string, storeFile string) error {
-  st, err := newStore(storeFile)
+func (m *model) rebuildKittenChangeTable() error {
+  return nil
+}
+
+func (m *model) unsubscribe(s *websocket.Conn) {
+  s.Close()
+  m.Conns[s] = 0, false
+}
+
+func (m *model) subscribe(s *websocket.Conn) {
+  m.Conns[s] = 1
+  m.notify(newConnectMessage(m.Changes, m.Kittens))
+}
+
+func (m *model) notify(n interface{}) error {
+  data, err := json.MarshalIndent(n, "", "  ")
   if err != nil {
     return err
   }
 
-  changes, err := st.changes(100)
+  for c, _ := range m.Conns {
+    c.Write(data)
+  }
+
+  return nil
+}
+
+func startModel(ch chan *sub, svnUrl string, storeFile string) error {
+  log.Printf("loading model (%s, %s)\n", storeFile, svnUrl)
+  model, err := loadModel(storeFile, svnUrl)
   if err != nil {
     return err
   }
 
-  head := webkitEarliestRevision
-  if len(changes) > 0 {
-    head = changes[0].Revision
+  log.Printf("updating model to HEAD\n")
+  if err := model.update(); err != nil {
+    return err
   }
-
-  sc := &svn.Client{svnUrl}
 
   go func() {
-    // TODO: Setup a timeout that is initially really low.
-    // we will then enter the loop with low time outs and
-    // incrementally get up-to-date. When we make it to head,
-    // we'll then crank up the timeout to our polling interval
-    // and proceed from there.
-    cons := make([]*websocket.Conn, 0)
+    log.Printf("log started\n")
     for {
       select {
-      case c :=  <-ch:
-        cons = append(cons, c)
-        // Send the model state to the client.
-      case <- time.After(1e9):
-        // Perform incremental update.
-        _, _, err := update(st, sc, head)
-        if err != nil {
-          fmt.Println(err)
+      case s :=  <-ch:
+        if s.isOpen {
+          log.Printf("client accepted from %s\n", s.socket.RemoteAddr().String())
+          model.subscribe(s.socket)
+        } else {
+          log.Printf("client closed from %s\n", s.socket.RemoteAddr().String())
+          model.unsubscribe(s.socket)
         }
-        return
+      case <- time.After(webkitSvnPollingInterval * 60 * 1e9):
+        log.Printf("updating model to HEAD\n")
+        model.update()
+        // TODO: handle errors here ... simply log them.
       }
     }
   }()
   return nil
 }
-
-  // for last-commit to head
-  //   for each kitten
-  //     if kitten in commit
-  //       add kittencommit to store.
-  //   send notification of commit
-  //   update last-commit
 
 // An http.Handler that allows JSON access to log data.
 type svnLogHandler struct {
@@ -264,6 +363,11 @@ func stringToInt64(s string, def int64) int64 {
 	return v
 }
 
+type sub struct {
+  socket *websocket.Conn
+  isOpen bool
+}
+
 func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	startRev := stringToInt64(r.FormValue("s"), svn.REV_HEAD)
@@ -277,18 +381,14 @@ func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(items)
 }
 
-// TODO:
-// 1 - Create http server.
-// 2 - Turn logic into talking to svn servers into simple component.
-// 3 - Create background poller.
-var flagBuildDatabase = flag.Bool("build-database", false, "Creates the webkit database and then exits.")
+var flagAddr = flag.String("addr", ":6565", "bind address for http server")
 
 func main() {
   flag.Parse()
 
   // channel allows websockets to attach to model.
-  wsChan := make(chan *websocket.Conn)
-  err = startModel(wsChan, webkitSvnUrl, modelDatabaseFile)
+  wsChan := make(chan *sub)
+  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile)
   if err != nil {
     panic(err)
   }
@@ -296,10 +396,20 @@ func main() {
 	http.Handle("/chrome/", newSvnLogHandler("http://src.chromium.org/svn/trunk"))
 	http.Handle("/", kellegous.NewAppHandler(http.Dir("pub")))
 	http.Handle("/atl/str", websocket.Handler(func(ws *websocket.Conn) {
-    wsChan <- ws
+    wsChan <- &sub{ws, true}
+
+    for {
+      b := make([]byte, 1)
+      _, err := ws.Read(b)
+      if err != nil {
+        wsChan <- &sub{ws, false}
+        ws.Close()
+        return
+      }
+    }
   }))
-	fmt.Println("Running...")
-	err = http.ListenAndServe(":6565", nil)
+
+	err = http.ListenAndServe(*flagAddr, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -325,6 +435,6 @@ var databaseSetupScript = []string{`
   );`,
   `INSERT OR REPLACE INTO kitten VALUES('knorton@google.com', 'Kelly Norton');`,
   `INSERT OR REPLACE INTO kitten VALUES('jgw@google.com', 'Joel Webber');`,
-  `INSERT OR REPLACE INTO kitten VALUES('schenney@google.com', 'Stephen Chenney');`,
+  `INSERT OR REPLACE INTO kitten VALUES('schenney@chromium.org', 'Stephen Chenney');`,
   `INSERT OR REPLACE INTO kitten VALUES('pdr@google.com', 'Philip Rogers');`,
   `INSERT OR REPLACE INTO kitten VALUES('fmalita@google.com', 'Florin Malita');`}

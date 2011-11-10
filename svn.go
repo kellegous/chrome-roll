@@ -30,7 +30,11 @@ func newLogItem() *LogItem {
 }
 
 func charDataString(data xml.Token) string {
-	return string([]byte(data.(xml.CharData)))
+  switch t := data.(type) {
+  case xml.CharData:
+    return string([]byte(t))
+  }
+  return ""
 }
 
 func toLogItems(parser *xml.Parser) ([]*LogItem, error) {
