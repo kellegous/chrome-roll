@@ -1,9 +1,44 @@
 (function(){
 #include "../common.js"
 
+// SvgKitten
+function SvgKitten() {
+  var says = document.create('div');
+  says.id = 'svgkitten-says';
+
+  var root = document.create('div').add(says);
+  root.id = 'svgkitten';
+
+  document.body.add(root);
+
+  this._says = says;
+  this._root = root;
+  this._showing = false;
+  this.hide();
+}
+
+SvgKitten.prototype.showing = function() {
+  return this._showing;
+}
+SvgKitten.prototype.show = function(message) {
+  this._root.css('display', '');
+}
+SvgKitten.prototype.hide = function() {
+  this._root.css('display', 'none');
+}
+SvgKitten.say = function(message) {
+  var inst = SvgKitten._instance;
+  if (!inst) {
+    inst = SvgKitten._instance = new SvgKitten();
+  }
+
+  inst.show();
+  return inst;
+  // Remove anything SVG Kitten is saying.
+}
+
 // Model
-function Model(socket, listener) {
-  this._socket = socket;
+function Model(listener) {
   this._listener = listener;
   this._reset();
 }
@@ -80,7 +115,33 @@ Model.prototype.messageDidArrive = function(m) {
   }
 }
 
+var MS_IN_MINUTE = 60 * 1000;
+
 Model.connect = function(path, listener) {
+
+  function newSocket(url, model, reconnectIn) {
+    function nextTimeout(current) {
+      return (current >= 10 * MS_IN_MINUTE) ? current : current * 2;
+    }
+    var socket = new WebSocket(url);
+    socket.onopen = function() {
+      model._dispatch('socketDidOpen', [model]);
+    }
+    socket.onclose = function() {
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.close();
+      model._dispatch('socketDidClose', [model]);
+      setTimeout(function() {
+        newSocket(url, model, nextTimeout(reconnectIn));
+      }, reconnectIn);
+    }
+    socket.onmessage = function(m) {
+      model.messageDidArrive(JSON.parse(m.data));
+    }
+  }
+
   var basepath = window.location.pathname;
   if (!basepath.endsWith('/'))
     basepath += '/';
@@ -88,19 +149,8 @@ Model.connect = function(path, listener) {
     path = path.substring(1);
   var url = 'ws://' + window.location.host + basepath + path;
 
-  var socket = new WebSocket(url);
-  var model = new Model(socket, listener);
-
-  socket.onopen = function() {
-    console.log('socket is open');
-  }
-  socket.onclose = function() {
-    // TODO: reconnect and possibly refresh.
-    console.log('socket is closed');
-  }
-  socket.onmessage = function(m) {
-    model.messageDidArrive(JSON.parse(m.data));
-  }
+  var model = new Model(listener);
+  newSocket(url, model, 1000);
 }
 
 function newKittensView() {
@@ -173,7 +223,18 @@ function main() {
       console.log(change);
     },
     kittenMadeChange: function(model, kitten, change) {
+      console.log(change);
       document.qo('#badge-count').text('' + model.kittenChangeCount());
+    },
+    socketDidOpen: function(model) {
+      var sk = SvgKitten.say('socket did open');
+      setTimeout(function() {
+        sk.hide();
+      }, 2000);
+      console.log('socket did open');
+    },
+    socketDidClose: function(model) {
+      console.log('socket did close');
     }
   });
 }
