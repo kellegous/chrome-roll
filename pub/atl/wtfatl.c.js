@@ -100,7 +100,7 @@ Model.prototype.messageDidArrive = function(m) {
     });
 
     // Dispatch the load event.
-    self._dispatch('modelDidLoad', [self, m.Changes]);
+    self._dispatch('modelDidLoad', [self, m.Changes, m.Version]);
     break;
   case "change":
     var change = m.Change;
@@ -125,13 +125,13 @@ Model.prototype.messageDidArrive = function(m) {
   }
 }
 
-var MS_IN_MINUTE = 60 * 1000;
+var MS_IN_SECOND = 1000;
 
 Model.connect = function(path, listener) {
 
   function newSocket(url, model, reconnectIn) {
     function nextTimeout(current) {
-      return (current >= 10 * MS_IN_MINUTE) ? current : current * 2;
+      return (current >= 30 * MS_IN_SECOND) ? current : current * 2;
     }
     var socket = new WebSocket(url);
     socket.onopen = function() {
@@ -238,10 +238,16 @@ function destroyUi() {
 }
 
 function main() {
+  var serverVersion;
   var svgKitten = new SvgKitten();
-  var svgKitten;
   Model.connect('str', {
-    modelDidLoad: function(model, changes) {
+    modelDidLoad: function(model, changes, version) {
+      // on reconnect, we want to reload if the server changed.
+      if (serverVersion && serverVersion != version) {
+        location.reload(true);
+        return;
+      }
+      serverVersion = version;
       destroyUi();
       createUi(model);
       document.body.css('opacity', '1.0');

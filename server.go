@@ -22,6 +22,7 @@ const (
 	webkitEarliestRevision int64 = 48167
 	modelDatabaseFile      = "db/webkit.sqlite"
   webkitSvnPollingInterval = 1 // minutes
+  versionIdentifier = "0.1"
 )
 
 type kitten struct {
@@ -188,13 +189,14 @@ func newChangeMessage(change *change, kittens []string) *changeMessage {
 }
 
 type connectMessage struct {
+  Version string
   Type string
   Changes []*change
   Kittens []*kitten
 }
 
 func newConnectMessage(changes []*change, kittens []*kitten) *connectMessage {
-  return &connectMessage{"connect", changes, kittens};
+  return &connectMessage{versionIdentifier, "connect", changes, kittens};
 }
 
 type model struct {
