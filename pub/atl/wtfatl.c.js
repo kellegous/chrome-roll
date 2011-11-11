@@ -1,11 +1,32 @@
 (function(){
 #include "../common.js"
 
+function Tx(element) {
+  this._element = element;
+}
+Tx.prototype.then = function(f) {
+  var e = this._element;
+  var cb = function() {
+    e.removeEventListener('webkitTransitionEnd', cb, false);
+    f();
+  }
+  e.addEventListener('webkitTransitionEnd', cb, false);
+  return this;
+}
+
 // SvgKitten
 function SvgKitten() {
-  var says = document.create('div');
-  says.id = 'svgkitten-says';
+  var call = document.create('div');
+  call.id = 'svgkitten-call';
 
+  var msgt = document.create('div').text('svn kitten says:');
+  msgt.className = 'title';
+  var msgb = document.create('div');
+  msgb.className = 'message';
+  
+  var says = document.create('div').add(call, msgt, msgb);
+  says.id = 'svgkitten-says';
+  
   var root = document.create('div').add(says);
   root.id = 'svgkitten';
 
@@ -13,28 +34,30 @@ function SvgKitten() {
 
   this._says = says;
   this._root = root;
-  this._showing = false;
+  this._mesg = msgb;
   this.hide();
 }
 
-SvgKitten.prototype.showing = function() {
-  return this._showing;
-}
 SvgKitten.prototype.show = function(message) {
-  this._root.css('display', '');
+  this._mesg.text(message);
+  return new Tx(this._root.css('opacity', '1.0'));
 }
 SvgKitten.prototype.hide = function() {
-  this._root.css('display', 'none');
+  var root = this._root;
+  return new Tx(root.css('opacity', '0.0'));
 }
 SvgKitten.say = function(message) {
   var inst = SvgKitten._instance;
   if (!inst) {
     inst = SvgKitten._instance = new SvgKitten();
+    setTimeout(function() {
+      inst.show(message);
+    }, 0);
+  } else {
+    inst.show(message);
   }
 
-  inst.show();
   return inst;
-  // Remove anything SVG Kitten is saying.
 }
 
 // Model
@@ -214,6 +237,7 @@ function destroyUi() {
 }
 
 function main() {
+  var svgKitten;
   Model.connect('str', {
     modelDidLoad: function(model, changes) {
       destroyUi();
@@ -228,14 +252,13 @@ function main() {
       document.qo('#badge-count').text('' + model.kittenChangeCount());
     },
     socketDidOpen: function(model) {
-      var sk = SvgKitten.say('socket did open');
-      setTimeout(function() {
-        sk.hide();
-      }, 2000);
-      console.log('socket did open');
+      if (svgKitten) {
+        svgKitten.hide();
+        svgKitten = null;
+      }
     },
     socketDidClose: function(model) {
-      console.log('socket did close');
+      svgKitten = SvgKitten.say('your server broke!');
     }
   });
 }
