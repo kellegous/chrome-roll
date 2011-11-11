@@ -218,6 +218,7 @@ function main() {
     modelDidLoad: function(model, changes) {
       destroyUi();
       createUi(model);
+      document.body.css('opacity', '1.0');
     },
     changeDidArrive: function(change, kittens) {
       console.log(change);
