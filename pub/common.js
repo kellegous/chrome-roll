@@ -39,6 +39,18 @@ Node.prototype.remove = function() {
   this.parentNode.removeChild(this);
   return this;
 }
+Node.prototype.transition = function(n, v, cb) {
+  this.css(n, v);
+  if (cb) {
+    var self = this;
+    function f(event) {
+      self.removeEventListener('webkitTransitionEnd', f, false);
+      cb(event);
+    }
+    this.addEventListener('webkitTransitionEnd', f, false);
+  }
+  return this;
+}
 NodeList.prototype.forEach = function(f) {
   for (var i = 0, n = this.length; i < n; ++i)
     f(this[i]);
@@ -54,4 +66,7 @@ String.prototype.endsWith = function(suffix) {
 }
 String.prototype.startsWith = function(prefix) {
   return this.substring(0, prefix.length) == prefix;
+}
+Array.prototype.tail = function() {
+  return this[this.length - 1];
 }

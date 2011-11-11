@@ -1,24 +1,24 @@
 (function(){
 #include "../common.js"
 
-function Tx(element) {
-  this._element = element;
-}
-Tx.prototype.then = function(f) {
-  var e = this._element;
-  var cb = function() {
-    e.removeEventListener('webkitTransitionEnd', cb, false);
-    f();
-  }
-  e.addEventListener('webkitTransitionEnd', cb, false);
-  return this;
+// a makeshift transition queue.
+function changeBadge(element, count) {
+  var q = element._q || (element._q = []);
+  q.push(function() {
+    element.transition('opacity', '0', function() {
+      q.shift();
+      element.text('' + count).transition('opacity', '1', q[0]);
+    });
+  });
+  if (q.length == 1)
+    q[0]();
 }
 
 // SvgKitten
 function SvgKitten() {
   var call = document.create('div');
   call.className = 'call';
-  var msgt = document.create('div').text('svn kitten says:');
+  var msgt = document.create('div').text('svg kitten says:');
   msgt.className = 'title';
   var msgb = document.create('div');
   msgb.className = 'message';
@@ -37,13 +37,14 @@ function SvgKitten() {
   this.hide();
 }
 
-SvgKitten.prototype.show = function(message) {
+SvgKitten.prototype.show = function(message, showDidFinish) {
   this._mesg.text(message);
-  return new Tx(this._root.css('opacity', '1.0'));
+  this._root.transition('opacity', '1', showDidFinish);
+  return this;
 }
-SvgKitten.prototype.hide = function() {
+SvgKitten.prototype.hide = function(hideDidFinish) {
   var root = this._root;
-  return new Tx(root.css('opacity', '0.0'));
+  this._root.transition('opacity', '0', hideDidFinish);
 }
 
 // Model
@@ -192,7 +193,21 @@ function newKittenView(model, kitten) {
   badge.className = 'badge';
 
   model.subscribe(kitten, function(kitten) {
-    badge.text('' + kitten.Revisions.length);
+    changeBadge(badge, kitten.Revisions.length);
+  });
+  // makeshift transition queue.
+  var q = [];
+  model.subscribe(kitten, function(kitten) {
+    // capture the count because it may change.
+    var count = kitten.Revisions.length;
+    q.push(function() {
+      badge.transition('opacity', '0', function() {
+        q.shift();
+        badge.text('' + count).transition('opacity', '1', q[0]);
+      });
+    });
+    if (q.length == 1)
+      q[0]();
   });
 
   return root
@@ -236,7 +251,7 @@ function main() {
     },
     kittenMadeChange: function(model, kitten, change) {
       console.log(change);
-      document.qo('#badge-count').text('' + model.kittenChangeCount());
+      changeBadge(document.qo('#badge-count'), model.kittenChangeCount());
     },
     socketDidOpen: function(model) {
       svgKitten.hide();
@@ -248,5 +263,4 @@ function main() {
 }
 
 whenReady(main);
-
 })();

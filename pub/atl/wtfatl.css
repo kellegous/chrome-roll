@@ -1,5 +1,5 @@
 body {
-  -webkit-transition: opacity 200ms ease-in-out;
+  -webkit-transition: opacity 1s ease-in-out;
   font-family: 'Open Sans', sans-serif;
   background: #fff;
   font-weight: 300;
@@ -40,6 +40,7 @@ body {
 #badge-count {
   font-size: 84pt;
   line-height: 56pt;
+  -webkit-transition: opacity 200ms ease-in-out;
 }
   
 
@@ -71,6 +72,7 @@ body {
   font-size: 48pt;
   color: #fff;
   text-shadow: 2px 2px 2px #000;
+  -webkit-transition: opacity 200ms ease-in-out;
 }
 #svgkitten {
   position: fixed;
@@ -91,9 +93,8 @@ body {
   height: 150px;
   min-width: 300px;
   -webkit-border-radius: 10pt;
-  right: 300px;
-  top: -150px;
-  -webkit-box-shadow: 5px 5px 5px rgba(0, 0, 0, 0.5);
+  right: 285px;
+  top: -175px;
   padding: 20px;
 }
 

@@ -411,9 +411,13 @@ func (h *svnLogHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(items)
 }
 
-var flagAddr = flag.String("addr", ":6565", "bind address for http server")
+var flagAddr = flag.String("addr",
+    ":6565",
+    "bind address for http server")
 
-var flagRebuildChangeTable = flag.Bool("rebuild-change-table", false, "")
+var flagRebuildChangeTable = flag.Bool("rebuild-change-table",
+    false,
+    "")
 
 func main() {
   flag.Parse()
