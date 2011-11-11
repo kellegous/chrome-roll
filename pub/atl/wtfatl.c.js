@@ -106,6 +106,7 @@ Model.prototype.messageDidArrive = function(m) {
     var change = m.Change;
     var kittens = m.Kittens;
 
+    // update model state
     var toCallback = [];
     kittens.forEach(function(email) {
       var entry = self._index[email];
@@ -113,6 +114,14 @@ Model.prototype.messageDidArrive = function(m) {
         return;
       entry.Kitten.Revisions.push(change.Revision);
       toCallback.push(entry);
+    });
+
+    // now dispatch callbacks
+    kittens.forEach(function(email) {
+      var entry = self._index[email];
+      if (!entry)
+        return;
+      self._dispatch('kittenDidMakeChange', [self, entry.Kitten, {}]);
     });
     toCallback.forEach(function(entry) {
       entry.Callbacks.forEach(function(cb) {
@@ -255,7 +264,7 @@ function main() {
     changeDidArrive: function(change, kittens) {
       console.log(change);
     },
-    kittenMadeChange: function(model, kitten, change) {
+    kittenDidMakeChange: function(model, kitten, change) {
       console.log(change);
       changeBadge(document.qo('#badge-count'), model.kittenChangeCount());
     },
