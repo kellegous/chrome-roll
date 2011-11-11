@@ -17,8 +17,7 @@ Tx.prototype.then = function(f) {
 // SvgKitten
 function SvgKitten() {
   var call = document.create('div');
-  call.id = 'svgkitten-call';
-
+  call.className = 'call';
   var msgt = document.create('div').text('svn kitten says:');
   msgt.className = 'title';
   var msgb = document.create('div');
@@ -45,19 +44,6 @@ SvgKitten.prototype.show = function(message) {
 SvgKitten.prototype.hide = function() {
   var root = this._root;
   return new Tx(root.css('opacity', '0.0'));
-}
-SvgKitten.say = function(message) {
-  var inst = SvgKitten._instance;
-  if (!inst) {
-    inst = SvgKitten._instance = new SvgKitten();
-    setTimeout(function() {
-      inst.show(message);
-    }, 0);
-  } else {
-    inst.show(message);
-  }
-
-  return inst;
 }
 
 // Model
@@ -237,6 +223,7 @@ function destroyUi() {
 }
 
 function main() {
+  var svgKitten = new SvgKitten();
   var svgKitten;
   Model.connect('str', {
     modelDidLoad: function(model, changes) {
@@ -252,13 +239,10 @@ function main() {
       document.qo('#badge-count').text('' + model.kittenChangeCount());
     },
     socketDidOpen: function(model) {
-      if (svgKitten) {
-        svgKitten.hide();
-        svgKitten = null;
-      }
+      svgKitten.hide();
     },
     socketDidClose: function(model) {
-      svgKitten = SvgKitten.say('your server broke!');
+      svgKitten.show('your server broke!');
     }
   });
 }
