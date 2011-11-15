@@ -226,6 +226,20 @@ function newKittenView(model, kitten) {
 }
 
 function createUi(model) {
+  function boundsOf(elements) {
+    var b;
+    elements.forEach(function(e) {
+      var box = e.getBoundingClientRect();
+      if (!b)
+        b = { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+      b.left = Math.min(b.left, box.left);
+      b.right = Math.max(b.right, box.right);
+      b.top = Math.min(b.top, box.top);
+      b.bottom = Math.max(b.bottom, box.bottom);
+    });
+    return b;
+  }
+
   var badgeCount = document.qo('#badge-count').text('' + model.kittenChangeCount());
 
   var kittens = model.kittens();
@@ -238,6 +252,11 @@ function createUi(model) {
       kittensView = newKittensView();
     kittensView.add(newKittenView(model, kitten));
   });
+
+  // Scale the UI to the size of the monitor.
+  var bounds = boundsOf(document.qa('#team > *'));
+  var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
+  document.body.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
 }
 
 function destroyUi() {

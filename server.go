@@ -22,7 +22,8 @@ const (
 	webkitEarliestRevision int64 = 48167
 	modelDatabaseFile      = "db/webkit.sqlite"
   webkitSvnPollingInterval = 1 // minutes
-  versionIdentifier = "0.2"
+  // todo: convert this to something automatic.
+  versionIdentifier = "0.3"
 )
 
 type kitten struct {
