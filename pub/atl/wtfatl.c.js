@@ -261,6 +261,7 @@ function createUi(model) {
 }
 
 function destroyUi() {
+  document.body.qo('#root').style.removeProperty('-webkit-transform');
   document.body.qa('.kittens').forEach(function(e) {
     e.remove();
   });
