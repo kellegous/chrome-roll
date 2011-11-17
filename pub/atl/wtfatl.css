@@ -4,6 +4,7 @@ body {
   background: #fff;
   font-weight: 300;
   padding-top: 20%;
+  overflow: hidden;
 }
 
 #team {

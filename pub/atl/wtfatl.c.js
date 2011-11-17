@@ -172,13 +172,13 @@ Model.connect = function(path, listener) {
   newSocket(url, model, 1000);
 }
 
-function newKittensView() {
+function newKittensView(root) {
   var e = document.create('div');
   e.className = 'kittens';
   e.isFull = function() {
     return e.qa('.kitten').length >= 5;
   }
-  document.body.add(e);
+  root.add(e);
   return e;
 }
 
@@ -246,17 +246,18 @@ function createUi(model) {
   if (kittens.length == 0)
     return;
 
-  var kittensView = newKittensView();
+  var root = document.qo('#root');
+  var kittensView = newKittensView(root);
   kittens.forEach(function(kitten) {
     if (kittensView.isFull())
-      kittensView = newKittensView();
+      kittensView = newKittensView(root);
     kittensView.add(newKittenView(model, kitten));
   });
 
   // Scale the UI to the size of the monitor.
   var bounds = boundsOf(document.qa('#team > *'));
   var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
-  document.body.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
+  root.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
 }
 
 function destroyUi() {
