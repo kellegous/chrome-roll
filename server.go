@@ -424,7 +424,7 @@ var flagRebuildChangeTable = flag.Bool("rebuild-change-table",
     false,
     "")
 
-func readVersionId() (string, error) {
+func readVersionIdentifier() (string, error) {
   i, err := os.Open(os.Args[0])
   if err != nil {
     return "", err
@@ -442,7 +442,7 @@ func readVersionId() (string, error) {
 func main() {
   flag.Parse()
 
-  version, err := readVersionId()
+  version, err := readVersionIdentifier()
   if err != nil {
     panic(err)
   }
