@@ -1,10 +1,12 @@
 package main
 
 import (
+  "crypto/sha1"
 	"encoding/json"
   "flag"
 	"fmt"
   "gosqlite.googlecode.com/hg/sqlite"
+  "io"
 	"kellegous"
   "log"
 	"net/http"
@@ -22,8 +24,6 @@ const (
 	webkitEarliestRevision int64 = 48167
 	modelDatabaseFile      = "db/webkit.sqlite"
   webkitSvnPollingInterval = 1 // minutes
-  // todo: convert this to something automatic.
-  versionIdentifier = "0.5"
 )
 
 type kitten struct {
@@ -190,14 +190,14 @@ func newChangeMessage(change *change, kittens []string) *changeMessage {
 }
 
 type connectMessage struct {
-  Version string
   Type string
   Changes []*change
   Kittens []*kitten
+  Version string
 }
 
-func newConnectMessage(changes []*change, kittens []*kitten) *connectMessage {
-  return &connectMessage{versionIdentifier, "connect", changes, kittens};
+func newConnectMessage(changes []*change, kittens []*kitten, versionIdentifier string) *connectMessage {
+  return &connectMessage{"connect", changes, kittens, versionIdentifier};
 }
 
 type model struct {
@@ -206,12 +206,14 @@ type model struct {
   Store *store
   Svn *svn.Client
   Conns map[*websocket.Conn]int
+  VersionIdentifier string
 }
 
-func loadModel(sqlFilename, svnUrl string) (*model, error) {
+func loadModel(sqlFilename, svnUrl, versionIdentifier string) (*model, error) {
   m := &model{}
 
   m.Svn = &svn.Client{svnUrl}
+  m.VersionIdentifier = versionIdentifier
 
   store, err := newStore(sqlFilename)
   if err != nil {
@@ -323,7 +325,7 @@ func (m *model) unsubscribe(s *websocket.Conn) {
 
 func (m *model) subscribe(s *websocket.Conn) {
   m.Conns[s] = 1
-  m.notify(newConnectMessage(m.Changes, m.Kittens))
+  m.notify(newConnectMessage(m.Changes, m.Kittens, m.VersionIdentifier))
 }
 
 func (m *model) notify(n interface{}) error {
@@ -339,9 +341,9 @@ func (m *model) notify(n interface{}) error {
   return nil
 }
 
-func startModel(ch chan *sub, svnUrl string, storeFile string, rebuildChangeTable bool) error {
-  log.Printf("loading model (%s, %s)\n", storeFile, svnUrl)
-  model, err := loadModel(storeFile, svnUrl)
+func startModel(ch chan *sub, svnUrl, storeFile, versionIdentifier string, rebuildChangeTable bool) error {
+  log.Printf("loading model (%s, %s, %s)\n", storeFile, svnUrl, versionIdentifier)
+  model, err := loadModel(storeFile, svnUrl, versionIdentifier)
   if err != nil {
     return err
   }
@@ -422,12 +424,32 @@ var flagRebuildChangeTable = flag.Bool("rebuild-change-table",
     false,
     "")
 
+func readVersionId() (string, error) {
+  i, err := os.Open(os.Args[0])
+  if err != nil {
+    return "", err
+  }
+
+  s := sha1.New()
+  _, err = io.Copy(s, i)
+  if err != nil {
+    return "", err
+  }
+
+  return fmt.Sprintf("%x", s.Sum()), nil
+}
+
 func main() {
   flag.Parse()
 
+  version, err := readVersionId()
+  if err != nil {
+    panic(err)
+  }
+
   // channel allows websockets to attach to model.
   wsChan := make(chan *sub)
-  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile, *flagRebuildChangeTable)
+  err = startModel(wsChan, webkitSvnUrl, modelDatabaseFile, version, *flagRebuildChangeTable)
   if err != nil {
     panic(err)
   }
