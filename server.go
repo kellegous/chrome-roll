@@ -246,12 +246,15 @@ func (m *model) reload() error {
 }
 
 func (m *model) update() error {
+  log.Printf("updating model to HEAD\n")
+  defer log.Printf("done\n")
+
   latestRev := webkitEarliestRevision
   if len(m.Changes) != 0 {
     latestRev = m.Changes[0].Revision
   }
 
-  log.Printf(" requesting log starting at %d\n", latestRev)
+  log.Printf("  requesting log starting at %d\n", latestRev)
   items, err := m.Svn.Log(latestRev, svn.REV_HEAD, svn.LIMIT_NONE)
   if err != nil {
     return err
@@ -349,7 +352,6 @@ func startModel(ch chan *sub, svnUrl, storeFile, versionIdentifier string, rebui
     return err
   }
 
-  log.Printf("updating model to HEAD\n")
   if err := model.update(); err != nil {
     return err
   }
@@ -372,9 +374,7 @@ func startModel(ch chan *sub, svnUrl, storeFile, versionIdentifier string, rebui
           model.unsubscribe(s.socket)
         }
       case <- time.After(webkitSvnPollingInterval * 60 * 1e9):
-        log.Printf("updating model to HEAD\n")
         model.update()
-        log.Printf("done\n")
         // TODO: handle errors here ... simply log them.
       }
     }
