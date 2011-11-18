@@ -251,6 +251,7 @@ func (m *model) update() error {
     latestRev = m.Changes[0].Revision
   }
 
+  log.Printf(" requesting log starting at %d\n", latestRev)
   items, err := m.Svn.Log(latestRev, svn.REV_HEAD, svn.LIMIT_NONE)
   if err != nil {
     return err
@@ -360,7 +361,6 @@ func startModel(ch chan *sub, svnUrl, storeFile, versionIdentifier string, rebui
   }
 
   go func() {
-    log.Printf("log started\n")
     for {
       select {
       case s :=  <-ch:
@@ -374,6 +374,7 @@ func startModel(ch chan *sub, svnUrl, storeFile, versionIdentifier string, rebui
       case <- time.After(webkitSvnPollingInterval * 60 * 1e9):
         log.Printf("updating model to HEAD\n")
         model.update()
+        log.Printf("done\n")
         // TODO: handle errors here ... simply log them.
       }
     }
