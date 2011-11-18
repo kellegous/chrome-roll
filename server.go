@@ -246,15 +246,14 @@ func (m *model) reload() error {
 }
 
 func (m *model) update() error {
-  log.Printf("updating model to HEAD\n")
-  defer log.Printf("done\n")
 
   latestRev := webkitEarliestRevision
   if len(m.Changes) != 0 {
     latestRev = m.Changes[0].Revision
   }
 
-  log.Printf("  requesting log starting at %d\n", latestRev)
+  log.Printf("updating model starting at r%d\n", latestRev)
+  defer log.Printf("done\n")
   items, err := m.Svn.Log(latestRev, svn.REV_HEAD, svn.LIMIT_NONE)
   if err != nil {
     return err
