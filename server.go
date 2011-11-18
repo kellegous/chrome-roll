@@ -22,6 +22,7 @@ import (
 const (
 	webkitSvnUrl           = "http://svn.webkit.org/repository/webkit/trunk"
 	webkitEarliestRevision int64 = 48167
+  webkitPathToCommittersList = "/Tools/Scripts/webkitpy/common/config/committers.py"
 	modelDatabaseFile      = "db/webkit.sqlite"
   webkitSvnPollingInterval = 1 // minutes
 )
@@ -200,6 +201,20 @@ func newConnectMessage(changes []*change, kittens []*kitten, versionIdentifier s
   return &connectMessage{"connect", changes, kittens, versionIdentifier};
 }
 
+func webkitCommitters(c *svn.Client) error {
+  r, err := c.Get(webkitPathToCommittersList)
+  if err != nil {
+    return err
+  }
+
+  _, err = io.Copy(os.Stdout, r)
+  if err != nil {
+    panic(err)
+  }
+
+  return nil
+}
+
 type model struct {
   Kittens []*kitten
   Changes []*change
@@ -347,6 +362,11 @@ func (m *model) notify(n interface{}) error {
 func startModel(ch chan *sub, svnUrl, storeFile, versionIdentifier string, rebuildChangeTable bool) error {
   log.Printf("loading model (%s, %s, %s)\n", storeFile, svnUrl, versionIdentifier)
   model, err := loadModel(storeFile, svnUrl, versionIdentifier)
+  if err != nil {
+    return err
+  }
+
+  err = webkitCommitters(model.Svn)
   if err != nil {
     return err
   }

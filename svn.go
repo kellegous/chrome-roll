@@ -122,6 +122,16 @@ func (l *Client) Head() (*LogItem, error) {
   return items[0], nil
 }
 
+func (l *Client) Get(path string) (io.ReadCloser, error) {
+  c := &http.Client{}
+  // todo: what if Url ends with a /?
+  r, err := c.Get(fmt.Sprintf("%s%s", l.Url, path))
+  if err != nil {
+    return nil, err
+  }
+  return r.Body, nil
+}
+
 func (l *Client) Log(startRev int64, endRev int64, limit int64) ([]*LogItem, error) {
 	req, err := http.NewRequest(
 		"REPORT",
