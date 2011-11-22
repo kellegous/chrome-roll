@@ -1,13 +1,12 @@
 (function(){
 #include "../common.js"
 
-// a makeshift transition queue.
-function changeBadge(element, count) {
+function updateText(element, text) {
   var q = element._q || (element._q = []);
   q.push(function() {
     element.transition('opacity', '0', function() {
       q.shift();
-      element.text('' + count).transition('opacity', '1', q[0]);
+      element.text('' + text).transition('opacity', '1', q[0]);
     });
   });
   if (q.length == 1)
@@ -172,60 +171,18 @@ Model.connect = function(path, listener) {
   newSocket(url, model, 1000);
 }
 
-function newKittensView(root) {
-  var e = document.create('div');
-  e.className = 'kittens';
-  e.isFull = function() {
-    return e.qa('.kitten').length >= 5;
-  }
-  root.add(e);
-  return e;
-}
-
-function newKittenView(model, kitten) {
+/**
+ * @constructor View
+ */
+function View(model) {
+  /** @returns string */
   function usernameOf(kitten) {
     var email = kitten.Email;
     var ix = email.indexOf('@');
     return ix < 0 ? email : email.substring(0, ix);
   }
 
-  var root = document.create('div');
-  root.className = 'kitten';
-
-  var text = document.create('div');
-  kitten.Name.split(' ').forEach(function(x) {
-    text.add(document.create('div').text(x));
-  });
-  text.className = 'text';
-
-  var badge = document.create('div').text('' + kitten.Revisions.length);
-  badge.className = 'badge';
-
-  model.subscribe(kitten, function(kitten) {
-    changeBadge(badge, kitten.Revisions.length);
-  });
-  // makeshift transition queue.
-  var q = [];
-  model.subscribe(kitten, function(kitten) {
-    // capture the count because it may change.
-    var count = kitten.Revisions.length;
-    q.push(function() {
-      badge.transition('opacity', '0', function() {
-        q.shift();
-        badge.text('' + count).transition('opacity', '1', q[0]);
-      });
-    });
-    if (q.length == 1)
-      q[0]();
-  });
-
-  return root
-    .css('background-image', 'url(img/' +  usernameOf(kitten) + '.png)')
-    .add(text, badge);
-
-}
-
-function createUi(model) {
+  /** @returns Object */
   function boundsOf(elements) {
     var b;
     elements.forEach(function(e) {
@@ -240,36 +197,81 @@ function createUi(model) {
     return b;
   }
 
-  var badgeCount = document.qo('#badge-count').text('' + model.kittenChangeCount());
+  /** @returns Element */
+  function newKittensView(root) {
+    var e = document.create('div');
+    e.className = 'kittens';
+    e.isFull = function() {
+      return e.qa('.kitten').length >= 5;
+    }
+    root.add(e);
+    return e;
+  }
+
+  /** @returns Element */
+  function newKittenView(model, kitten) {
+
+    var root = document.create('div');
+    root.className = 'kitten';
+
+    var text = document.create('div');
+    kitten.Name.split(' ').forEach(function(x) {
+      text.add(document.create('div').text(x));
+    });
+    text.className = 'text';
+
+    var badge = document.create('div').text('' + kitten.Revisions.length);
+    badge.className = 'badge';
+
+    model.subscribe(kitten, function(kitten) {
+      updateText(badge, kitten.Revisions.length);
+    });
+
+    return root
+      .css('background-image', 'url(img/' +  usernameOf(kitten) + '.png)')
+      .add(text, badge);
+  }
+
+  var badgeView = document.qo('#badge-count').text('' + model.kittenChangeCount());
 
   var kittens = model.kittens();
   if (kittens.length == 0)
     return;
 
-  var root = document.qo('#root');
-  var kittensView = newKittensView(root);
+  var rootView = document.qo('#root');
+  var kittensView = newKittensView(rootView);
   kittens.forEach(function(kitten) {
     if (kittensView.isFull())
-      kittensView = newKittensView(root);
+      kittensView = newKittensView(rootView);
     kittensView.add(newKittenView(model, kitten));
   });
 
   // Scale the UI to the size of the monitor.
   var bounds = boundsOf(document.qa('#team > *'));
   var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
-  root.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
-}
+  rootView.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')')
+    .css('opacity', '1.0');
 
-function destroyUi() {
-  document.body.qo('#root').style.removeProperty('-webkit-transform');
-  document.body.qa('.kittens').forEach(function(e) {
+  this._badgeView = badgeView;
+  this._rootView = rootView;
+}
+View.prototype.destroy = function() {
+  this._rootView.style.removeProperty('-webkit-transform');
+  this._rootView.qa('.kittens').forEach(function(e) {
     e.remove();
   });
 }
+View.prototype.beMeek = function(v) {
+  this._rootView.css('opacity', v ? '0.5' : '1.0');
+}
+View.prototype.kittenDidMakeChange = function(model, kitten, change) {
+  updateText(this._badgeView, model.kittenChangeCount());
+}
 
 function main() {
-  var serverVersion;
+  var view, serverVersion;
   var svgKitten = new SvgKitten();
+
   Model.connect('str', {
     modelDidLoad: function(model, changes, version) {
       // on reconnect, we want to reload if the server changed.
@@ -278,22 +280,37 @@ function main() {
         return;
       }
       serverVersion = version;
-      destroyUi();
-      createUi(model);
-      document.body.css('opacity', '1.0');
+
+      // We also want to completely restore the view.
+      if (view)
+        view.destroy();
+      view = new View(model);
+
+      // Make a way to fake it.
+      window.makeFakeChange = function(email) {
+        model.messageDidArrive({
+          Type: 'change',
+          Change: { Revision: 0 },
+          Kittens: [ email ]
+        });
+      }
     },
     changeDidArrive: function(change, kittens) {
       console.log(change);
     },
     kittenDidMakeChange: function(model, kitten, change) {
       console.log(change);
-      changeBadge(document.qo('#badge-count'), model.kittenChangeCount());
+      view.kittenDidMakeChange(model, kitten, change);
     },
     socketDidOpen: function(model) {
       svgKitten.hide();
+      if (view)
+        view.beMeek(false);
     },
     socketDidClose: function(model) {
       svgKitten.show('your server broke!');
+      if (view)
+        view.beMeek(true);
     }
   });
 }
