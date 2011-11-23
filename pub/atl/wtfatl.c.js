@@ -197,6 +197,12 @@ function View(model) {
     return b;
   }
 
+  function newChangesView(model) {
+    var changes = document.create('div').attr('id', 'changes');
+
+    return changes;
+  }
+
   /** @returns Element */
   function newKittensView(root) {
     var e = document.create('div');
@@ -246,6 +252,9 @@ function View(model) {
     kittensView.add(newKittenView(model, kitten));
   });
 
+  var changesView = newChangesView(model);
+  rootView.add(changesView);
+
   // Scale the UI to the size of the monitor.
   var bounds = boundsOf(document.qa('#team > *'));
   var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
@@ -254,6 +263,7 @@ function View(model) {
 
   this._badgeView = badgeView;
   this._rootView = rootView;
+  this._changesView = changesView;
 }
 View.prototype.destroy = function() {
   this._rootView.style.removeProperty('-webkit-transform');
@@ -266,6 +276,9 @@ View.prototype.beMeek = function(v) {
 }
 View.prototype.kittenDidMakeChange = function(model, kitten, change) {
   updateText(this._badgeView, model.kittenChangeCount());
+}
+View.prototype.changeDidArrive = function(change) {
+  console.log(change);
 }
 
 function main() {
@@ -286,20 +299,14 @@ function main() {
         view.destroy();
       view = new View(model);
 
-      // Make a way to fake it.
-      window.makeFakeChange = function(email) {
-        model.messageDidArrive({
-          Type: 'change',
-          Change: { Revision: 0 },
-          Kittens: [ email ]
-        });
-      }
+      changes.forEach(function(c) {
+        view.changeDidArrive(c);
+      });
     },
     changeDidArrive: function(change, kittens) {
-      console.log(change);
+      view.changeDidArrive(change);
     },
     kittenDidMakeChange: function(model, kitten, change) {
-      console.log(change);
       view.kittenDidMakeChange(model, kitten, change);
     },
     socketDidOpen: function(model) {
