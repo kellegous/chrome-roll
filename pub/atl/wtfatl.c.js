@@ -353,7 +353,7 @@ function main() {
       // We also want to completely restore the view.
       if (view)
         view.destroy();
-      view = new View(model, document.location.hash.indexOf('-zoom') == -1);
+      view = new View(model, false);
 
       for (var i = changes.length - 1; i >= 0; --i) {
         view.changeDidArrive(changes[i], true);
