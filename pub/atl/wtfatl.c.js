@@ -1,6 +1,29 @@
 (function(){
 #include "../common.js"
 
+var AUTHOR_ALIASES = {
+  'commit-queue@webkit.org' : 'Commit Bot'
+};
+
+// todo: this is a terrible mess.
+function reveal(q, element) {
+  var h = element.getBoundingClientRect().height;
+  element.css('height', '0px').css('overflow', 'hidden');
+  q.push(function() {
+    element.transition('height', h + 'px', function() {
+      q.shift();
+      element.style.removeProperty('overflow');
+      next = q[0];
+      if (next)
+        next();
+    });
+  });
+  if (q.length == 1) {
+    setTimeout(function() {
+      q[0]();
+    }, 0);
+  }
+}
 function updateText(element, text) {
   var q = element._q || (element._q = []);
   q.push(function() {
@@ -174,7 +197,8 @@ Model.connect = function(path, listener) {
 /**
  * @constructor View
  */
-function View(model) {
+function View(model, inDashboardMode) {
+
   /** @returns string */
   function usernameOf(kitten) {
     var email = kitten.Email;
@@ -197,10 +221,14 @@ function View(model) {
     return b;
   }
 
-  function newChangesView(model) {
-    var changes = document.create('div').attr('id', 'changes');
-
-    return changes;
+  /** */
+  function enterDashboardMode() {
+    // Scale the UI to the size of the monitor.
+    var bounds = boundsOf(document.qa('#team > *'));
+    var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
+    rootView.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
+    document.body.css('overflow', 'hidden')
+      .css('padding-top', '20%');
   }
 
   /** @returns Element */
@@ -252,14 +280,12 @@ function View(model) {
     kittensView.add(newKittenView(model, kitten));
   });
 
-  var changesView = newChangesView(model);
+  var changesView = document.create('div').attr('id', 'changes');
   rootView.add(changesView);
 
-  // Scale the UI to the size of the monitor.
-  var bounds = boundsOf(document.qa('#team > *'));
-  var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
-  rootView.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')')
-    .css('opacity', '1.0');
+  rootView.css('opacity', '1.0');
+  if (inDashboardMode)
+    enterDashboardMode();
 
   this._badgeView = badgeView;
   this._rootView = rootView;
@@ -277,8 +303,38 @@ View.prototype.beMeek = function(v) {
 View.prototype.kittenDidMakeChange = function(model, kitten, change) {
   updateText(this._badgeView, model.kittenChangeCount());
 }
-View.prototype.changeDidArrive = function(change) {
-  console.log(change);
+View.prototype.changeDidArrive = function(change, loadInProgress) {
+  function formatCommentAsHtml(comment) {
+    var result = [];
+    var lines = comment.split('\n');
+    for (var i = 0; i < lines.length; ++i) {
+      var line = lines[i];
+      var text = line.trim();
+      if (text.startsWith('*'))
+        break;
+      result.push(text.length == 0 ? '' : line);
+    }
+    return result.join('\n');
+  }
+  function formatTime(date) {
+    function p(n) { return n = n.toFixed(), n.length == 1 ? '0' + n : n; }
+    return p(date.getHours()) + ':' + p(date.getMinutes());
+  }
+  function formatTitle(rev, author) {
+    var name = AUTHOR_ALIASES[author] || author;
+    return 'r' + rev + ' by ' + name;
+  }
+  var changesView = this._changesView;
+  var c = document.create('div').cls('change').add(
+      document.create('div').cls('title').add(
+        document.create('span').text(formatTitle(change.Revision, change.Author)),
+        document.create('span').cls('time').text(formatTime(new Date(Date.parse(change.Date))))),
+      document.create('div').cls('comment').text(formatCommentAsHtml(change.Comment)));
+  changesView.prepend(c);
+  if (!loadInProgress)
+    reveal(changesView._q || (changesView._q = []), c);
+  while (changesView.childElementCount > 20)
+    changesView.removeChild(changesView.lastElementChild);
 }
 
 function main() {
@@ -297,16 +353,20 @@ function main() {
       // We also want to completely restore the view.
       if (view)
         view.destroy();
-      view = new View(model);
+      view = new View(model, document.location.hash.indexOf('-zoom') == -1);
 
-      changes.forEach(function(c) {
-        view.changeDidArrive(c);
-      });
+      for (var i = changes.length - 1; i >= 0; --i) {
+        view.changeDidArrive(changes[i], true);
+      }
     },
     changeDidArrive: function(change, kittens) {
-      view.changeDidArrive(change);
+      // todo: get rid of these callbacks that have to be
+      // repushed into the view.
+      view.changeDidArrive(change, false);
     },
     kittenDidMakeChange: function(model, kitten, change) {
+      // todo: get rid of these callbacks that have to be
+      // repushed into the view.
       view.kittenDidMakeChange(model, kitten, change);
     },
     socketDidOpen: function(model) {

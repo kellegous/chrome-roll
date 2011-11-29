@@ -14,6 +14,14 @@ Node.prototype.qo = function(selector) {
 Node.prototype.qa = function(selector) {
   return this.querySelectorAll(selector);
 }
+Node.prototype.cls = function(c) {
+  // todo: make variadic
+  this.className = c;
+  return this;
+}
+Node.prototype.id = function(id) {
+  return this.attr('id', id);
+}
 Node.prototype.attr = function(k, v) {
   this.setAttribute(k, v);
   return this;
@@ -24,6 +32,16 @@ Node.prototype.css = function(n, v) {
 }
 Node.prototype.text = function(v) {
   this.textContent = v;
+  return this;
+}
+Node.prototype.prepend = function() {
+  for (var i = 0, n = arguments.length; i < n; ++i)
+    this.insertBefore(arguments[i], this.firstChild);
+  return this;
+}
+Node.prototype.append = function() {
+  for (var i = 0, n = arguments.length; i < n; ++i)
+    this.appendChild(arguments[i]);
   return this;
 }
 Node.prototype.add = function() {

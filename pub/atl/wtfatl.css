@@ -3,8 +3,6 @@ body {
   font-family: 'Open Sans', sans-serif;
   background: #fff;
   font-weight: 300;
-  padding-top: 20%;
-  overflow: hidden;
 }
 
 #team {
@@ -25,8 +23,6 @@ body {
   border-bottom: 1px solid #000;
   padding-left: 100px;
   padding-top: 85px;
-  /*
-  */
   color: #000;
 }
 
@@ -116,4 +112,27 @@ body {
   background: url(img/call.png) no-repeat left top;
   bottom: -60px;
   right: 5px;
+}
+
+#changes {
+  width: 1005px;
+  margin: 120px auto 20px auto;
+}
+.change {
+  -webkit-transition: height 1s ease-in-out;
+}
+
+.change > .title {
+  border-bottom: 1px solid #666;
+  font-size: 24pt;
+  margin-bottom: 15px;
+}
+
+.change > .title > .time {
+  float: right;
+}
+
+.change > .comment {
+  white-space: pre;
+  padding-bottom: 50px;
 }
