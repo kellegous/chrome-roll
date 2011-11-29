@@ -307,6 +307,7 @@ View.prototype.destroy = function() {
   this._rootView.qa('.kittens').forEach(function(e) {
     e.remove();
   });
+  this._changesView.remove();
 }
 View.prototype.beMeek = function(v) {
   this._rootView.css('opacity', v ? '0.5' : '1.0');
