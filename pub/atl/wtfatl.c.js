@@ -236,9 +236,8 @@ function View(model, useKioskMode) {
     // Scale the UI to the size of the monitor.
     var bounds = boundsOf(document.qa('#team > *'));
     var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
-    // todo: this is totally jacked, let's avoid using scaling.
-    //rootView.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
-    document.body.css('overflow', 'hidden')
+    document.body.css('zoom', scale)
+      .css('overflow', 'hidden')
       .css('padding-top', '10%');
   }
 
@@ -352,14 +351,6 @@ View.prototype.changeDidArrive = function(change, loadInProgress) {
 function main() {
   var view, serverVersion;
   var svgKitten = new SvgKitten();
-
-  // Debugging reasons only.
-  setTimeout(function() {
-    svgKitten.show('My what a big screen you have: ' + window.innerWidth + 'x' + window.innerHeight + '!');
-    setTimeout(function() {
-      svgKitten.hide();
-    }, 10000);
-  }, 1000);
 
   Model.connect('str', {
     modelDidLoad: function(model, changes, version) {
