@@ -283,6 +283,7 @@ func (m *model) update() error {
       }
     }
 
+    // todo: make sure these come in chronological order.
     m.notify(n)
   }
 

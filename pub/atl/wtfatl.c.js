@@ -36,6 +36,16 @@ function updateText(element, text) {
     q[0]();
 }
 
+function isKiosk() {
+  var hash = document.location.hash;
+  if (hash == '#kiosk+')
+    return true;
+  if (hash == '#kiosk-')
+    return false;
+  return screen.width == window.innerWidth
+      && screen.height == window.innerHeight;
+}
+
 // SvgKitten
 function SvgKitten() {
   var call = document.create('div');
@@ -353,7 +363,7 @@ function main() {
       // We also want to completely restore the view.
       if (view)
         view.destroy();
-      view = new View(model, document.location.hash.indexOf('-zoom') == -1);
+      view = new View(model, isKiosk());
 
       for (var i = changes.length - 1; i >= 0; --i) {
         view.changeDidArrive(changes[i], true);
