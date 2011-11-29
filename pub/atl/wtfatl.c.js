@@ -37,7 +37,6 @@ function updateText(element, text) {
 }
 
 function isKiosk() {
-  return false;
   var hash = document.location.hash;
   if (hash == '#kiosk+')
     return true;
@@ -208,7 +207,7 @@ Model.connect = function(path, listener) {
 /**
  * @constructor View
  */
-function View(model, inDashboardMode) {
+function View(model, useKioskMode) {
 
   /** @returns string */
   function usernameOf(kitten) {
@@ -233,13 +232,14 @@ function View(model, inDashboardMode) {
   }
 
   /** */
-  function enterDashboardMode() {
+  function enterKioskMode() {
     // Scale the UI to the size of the monitor.
     var bounds = boundsOf(document.qa('#team > *'));
     var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
-    rootView.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
+    // todo: this is totally jacked, let's avoid using scaling.
+    //rootView.css('-webkit-transform', 'scale(' + scale + ' ,' + scale  + ')');
     document.body.css('overflow', 'hidden')
-      .css('padding-top', '20%');
+      .css('padding-top', '10%');
   }
 
   /** @returns Element */
@@ -295,8 +295,8 @@ function View(model, inDashboardMode) {
   rootView.add(changesView);
 
   rootView.css('opacity', '1.0');
-  if (inDashboardMode)
-    enterDashboardMode();
+  if (useKioskMode)
+    enterKioskMode();
 
   this._badgeView = badgeView;
   this._rootView = rootView;
@@ -351,6 +351,14 @@ View.prototype.changeDidArrive = function(change, loadInProgress) {
 function main() {
   var view, serverVersion;
   var svgKitten = new SvgKitten();
+
+  // Debugging reasons only.
+  setTimeout(function() {
+    svgKitten.show('My what a big screen you have: ' + window.innerWidth + 'x' + window.innerHeight + '!');
+    setTimeout(function() {
+      svgKitten.hide();
+    }, 10000);
+  }, 1000);
 
   Model.connect('str', {
     modelDidLoad: function(model, changes, version) {

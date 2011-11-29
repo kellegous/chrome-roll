@@ -424,6 +424,10 @@ var flagRebuildChangeTable = flag.Bool("rebuild-change-table",
     false,
     "")
 
+var flagVersionIdentifier = flag.String("version-identifier",
+    "",
+    "")
+
 func readVersionIdentifier() (string, error) {
   i, err := os.Open(os.Args[0])
   if err != nil {
@@ -442,14 +446,18 @@ func readVersionIdentifier() (string, error) {
 func main() {
   flag.Parse()
 
-  version, err := readVersionIdentifier()
-  if err != nil {
-    panic(err)
+  version := *flagVersionIdentifier
+  if version == "" {
+    id, err := readVersionIdentifier()
+    if err != nil {
+      panic(err)
+    }
+    version = id
   }
 
   // channel allows websockets to attach to model.
   wsChan := make(chan *sub)
-  err = startModel(wsChan, webkitSvnUrl, modelDatabaseFile, version, *flagRebuildChangeTable)
+  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile, version, *flagRebuildChangeTable)
   if err != nil {
     panic(err)
   }
