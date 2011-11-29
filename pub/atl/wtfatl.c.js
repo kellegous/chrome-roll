@@ -37,6 +37,7 @@ function updateText(element, text) {
 }
 
 function isKiosk() {
+  return false;
   var hash = document.location.hash;
   if (hash == '#kiosk+')
     return true;
