@@ -326,9 +326,18 @@ func (m *model) unsubscribe(s *websocket.Conn) {
   m.Conns[s] = 0, false
 }
 
+func notify(s *websocket.Conn, n interface{}) error {
+  data, err := json.MarshalIndent(n, "", "  ")
+  if err != nil {
+    return err
+  }
+  _, err = s.Write(data)
+  return err
+}
+
 func (m *model) subscribe(s *websocket.Conn) {
   m.Conns[s] = 1
-  m.notify(newConnectMessage(m.Changes, m.Kittens, m.VersionIdentifier))
+  notify(s, newConnectMessage(m.Changes, m.Kittens, m.VersionIdentifier))
 }
 
 func (m *model) notify(n interface{}) error {
