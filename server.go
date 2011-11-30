@@ -1,6 +1,7 @@
 package main
 
 import (
+  "crypto/rand"
   "crypto/sha1"
 	"encoding/json"
   "flag"
@@ -9,6 +10,7 @@ import (
   "io"
 	"kellegous"
   "log"
+  "math/big"
 	"net/http"
   "os"
   "path/filepath"
@@ -435,11 +437,21 @@ var flagRebuildChangeTable = flag.Bool("rebuild-change-table",
     false,
     "")
 
-var flagVersionIdentifier = flag.String("version-identifier",
-    "",
+var flagReloadClients = flag.Bool("reload-clients",
+    false,
     "")
 
-func readVersionIdentifier() (string, error) {
+func versionIdentifier(generate bool) (string, error) {
+  // generate a random id
+  if generate {
+    x, err := rand.Int(rand.Reader, big.NewInt(1e9))
+    if err != nil {
+      return "", err
+    }
+    return x.String(), nil
+  }
+
+  // use the binary as the id
   i, err := os.Open(os.Args[0])
   if err != nil {
     return "", err
@@ -457,18 +469,14 @@ func readVersionIdentifier() (string, error) {
 func main() {
   flag.Parse()
 
-  version := *flagVersionIdentifier
-  if version == "" {
-    id, err := readVersionIdentifier()
-    if err != nil {
-      panic(err)
-    }
-    version = id
+  version, err := versionIdentifier(*flagReloadClients)
+  if err != nil {
+    panic(err)
   }
 
   // channel allows websockets to attach to model.
   wsChan := make(chan *sub)
-  err := startModel(wsChan, webkitSvnUrl, modelDatabaseFile, version, *flagRebuildChangeTable)
+  err = startModel(wsChan, webkitSvnUrl, modelDatabaseFile, version, *flagRebuildChangeTable)
   if err != nil {
     panic(err)
   }

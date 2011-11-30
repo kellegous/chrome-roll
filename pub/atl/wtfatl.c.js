@@ -36,16 +36,6 @@ function updateText(element, text) {
     q[0]();
 }
 
-function isKiosk() {
-  var hash = document.location.hash;
-  if (hash == '#kiosk+')
-    return true;
-  if (hash == '#kiosk-')
-    return false;
-  return screen.width == window.innerWidth
-      && screen.height == window.innerHeight;
-}
-
 // SvgKitten
 function SvgKitten() {
   var call = document.create('div');
@@ -207,7 +197,7 @@ Model.connect = function(path, listener) {
 /**
  * @constructor View
  */
-function View(model, useKioskMode) {
+function View(model) {
 
   /** @returns string */
   function usernameOf(kitten) {
@@ -231,72 +221,75 @@ function View(model, useKioskMode) {
     return b;
   }
 
-  /** */
-  function enterKioskMode() {
-    // Scale the UI to the size of the monitor.
-    var bounds = boundsOf(document.qa('#team > *'));
-    var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
-    document.body.css('zoom', scale)
-      .css('overflow', 'hidden')
-      .css('padding-top', '10%');
-  }
-
-  /** @returns Element */
-  function newKittensView(root) {
-    var e = document.create('div');
-    e.className = 'kittens';
-    e.isFull = function() {
-      return e.qa('.kitten').length >= 5;
-    }
-    root.add(e);
-    return e;
-  }
-
   /** @returns Element */
   function newKittenView(model, kitten) {
-
-    var root = document.create('div');
-    root.className = 'kitten';
-
-    var text = document.create('div');
+    var text = document.create('div').cls('text');
     kitten.Name.split(' ').forEach(function(x) {
       text.add(document.create('div').text(x));
     });
-    text.className = 'text';
-
-    var badge = document.create('div').text('' + kitten.Revisions.length);
-    badge.className = 'badge';
-
+    var badge = document.create('div').cls('badge')
+        .text('' + kitten.Revisions.length);
     model.subscribe(kitten, function(kitten) {
       updateText(badge, kitten.Revisions.length);
     });
-
-    return root
+    return document.create('div').cls('kitten')
       .css('background-image', 'url(img/' +  usernameOf(kitten) + '.png)')
       .add(text, badge);
   }
 
+  /** @returns Element */
+  function newKittensView(root) {
+    var e = document.create('div').cls('kittens');
+    root.add(e);
+    return e;
+  }
+
+  /** @returns void */
+  function createKittensViews(root, model) {
+    var kittens = model.kittens();
+    var v = newKittensView(root);
+    kittens.forEach(function(kitten) {
+      if (v.qa('.kitten').length >= 5)
+        v = newKittensView(root);
+      v.add(newKittenView(model, kitten));
+    });
+  }
+
+  // get reference to overall count badge.
   var badgeView = document.qo('#badge-count').text('' + model.kittenChangeCount());
 
-  var kittens = model.kittens();
-  if (kittens.length == 0)
-    return;
-
+  // get reference to root.
   var rootView = document.qo('#root');
-  var kittensView = newKittensView(rootView);
-  kittens.forEach(function(kitten) {
-    if (kittensView.isFull())
-      kittensView = newKittensView(rootView);
-    kittensView.add(newKittenView(model, kitten));
-  });
 
+  // build 0 or more kittens views.
+  createKittensViews(root, model);
+
+  // create changes view.
   var changesView = document.create('div').attr('id', 'changes');
   rootView.add(changesView);
 
   rootView.css('opacity', '1.0');
-  if (useKioskMode)
-    enterKioskMode();
+  // Scale the UI to the size of the monitor.
+  var bounds = boundsOf(document.qa('#team > *'));
+  var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
+  document.body.css('zoom', scale)
+    .css('overflow', 'hidden')
+    .css('padding-top', '5%');
 
+  // add shortcut key for enabling scrollbars.
+  document.addEventListener('keypress', function(e) {
+    var b = document.body;
+    if (e.ctrlKey && e.shiftKey && e.keyCode == 19 /* s */) {
+      if (b.style.overflow === 'hidden') {
+        b.css('overflow', 'visible');
+      } else {
+        b.css('overflow', 'hidden');
+        b.scrollTop = 0;
+      }
+    }
+  }, true);
+
+  // create references to elements needed later.
   this._badgeView = badgeView;
   this._rootView = rootView;
   this._changesView = changesView;
@@ -364,7 +357,7 @@ function main() {
       // We also want to completely restore the view.
       if (view)
         view.destroy();
-      view = new View(model, isKiosk());
+      view = new View(model);
 
       for (var i = changes.length - 1; i >= 0; --i) {
         view.changeDidArrive(changes[i], true);
