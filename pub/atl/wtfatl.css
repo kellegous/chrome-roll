@@ -124,7 +124,7 @@ body {
 
 .change > .title {
   border-bottom: 1px solid #666;
-  font-size: 24pt;
+  font-size: 32pt;
   margin-bottom: 15px;
 }
 
@@ -135,4 +135,6 @@ body {
 .change > .comment {
   white-space: pre;
   padding-bottom: 50px;
+  color: #666;
+  font-size: 18pt;
 }
