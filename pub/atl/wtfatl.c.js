@@ -24,6 +24,7 @@ function reveal(q, element) {
     }, 0);
   }
 }
+
 function updateText(element, text) {
   var q = element._q || (element._q = []);
   q.push(function() {
@@ -194,6 +195,12 @@ Model.connect = function(path, listener) {
   newSocket(url, model, 1000);
 }
 
+/** @return string */
+function formatTime(date) {
+  function p(n) { return n = n.toFixed(), n.length == 1 ? '0' + n : n; }
+  return p(date.getHours()) + ':' + p(date.getMinutes());
+}
+
 /**
  * @constructor View
  */
@@ -273,8 +280,7 @@ function View(model) {
   var bounds = boundsOf(document.qa('#team > *'));
   var scale = 0.9 * window.innerWidth / (bounds.right - bounds.left);
   document.body.css('zoom', scale)
-    .css('overflow', 'hidden')
-    .css('padding-top', '5%');
+    .css('overflow', 'hidden');
 
   // add shortcut key for enabling scrollbars.
   document.addEventListener('keypress', function(e) {
@@ -307,6 +313,14 @@ View.prototype.beMeek = function(v) {
 View.prototype.kittenDidMakeChange = function(model, kitten, change) {
   updateText(this._badgeView, model.kittenChangeCount());
 }
+View.prototype.sleepyStateDidChange = function(beSleepy) {
+  // todo: just turn the screen black right now, but we need something
+  // more entertaining.
+  var sleepy = document.querySelector('#sleepy');
+  if (!sleepy)
+    return;
+  sleepy.style.opacity = beSleepy ? '1' : '0';
+}
 View.prototype.changeDidArrive = function(change, loadInProgress) {
   function formatCommentAsHtml(comment) {
     var result = [];
@@ -319,10 +333,6 @@ View.prototype.changeDidArrive = function(change, loadInProgress) {
       result.push(text.length == 0 ? '' : line);
     }
     return result.join('\n');
-  }
-  function formatTime(date) {
-    function p(n) { return n = n.toFixed(), n.length == 1 ? '0' + n : n; }
-    return p(date.getHours()) + ':' + p(date.getMinutes());
   }
   function formatTitle(rev, author) {
     var name = AUTHOR_ALIASES[author] || author;
@@ -384,6 +394,17 @@ function main() {
         view.beMeek(true);
     }
   });
+
+  var inSleepyTime = false;
+  setInterval(function() {
+    if (!view)
+      return;
+    var h = new Date().getHours();
+    // only show between 7 & 7.
+    var isSleepyTime = h >= 19 || h <= 7;
+    if (isSleepyTime != inSleepyTime)
+      view.sleepyStateDidChange(isSleepyTime);
+  }, 10000);
 }
 
 whenReady(main);
