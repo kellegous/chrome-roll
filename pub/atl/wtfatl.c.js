@@ -402,8 +402,10 @@ function main() {
     var h = new Date().getHours();
     // only show between 7 & 7.
     var isSleepyTime = h >= 19 || h <= 7;
-    if (isSleepyTime != inSleepyTime)
+    if (isSleepyTime != inSleepyTime) {
       view.sleepyStateDidChange(isSleepyTime);
+      inSleepyTime = isSleepyTime;
+    }
   }, 10000);
 }
 
