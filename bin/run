@@ -1,0 +1,66 @@
+#!/usr/bin/env python2.6
+
+import glob
+import subprocess
+import optparse
+import os
+import sys
+
+# todo: install gorun locally if we don't have it.
+def GetProjectRoot():
+  return os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    os.path.pardir))
+
+def FindGoRoot(options):
+  r = options.goroot
+  if r is not None:
+    return os.path.abspath(r)
+
+  env = os.environ
+  if env.has_key('GOROOT'):
+    return os.path.abspath(env['GOROOT'])
+
+  for path in ['~/src/go', '../go']:
+    r = os.path.abspath(os.path.expanduser(path))
+    if os.path.exists(os.path.join(r, 'bin/godoc')):
+      return r
+
+def Start(myroot, goroot, options, files):
+  command = [
+    os.path.join(myroot, 'bin/gorun'),
+    '--goroot=%s' % goroot]
+  command.extend(files)
+  command.append('--')
+  if options.rebuild_change_table:
+    command.append('--rebuild-change-table')
+  if options.reload_clients:
+    command.append('--reload-clients')
+  subprocess.call(command, cwd = myroot)
+
+if __name__ == '__main__':
+  # todo: add additional command line flags.
+  parser = optparse.OptionParser()
+  parser.add_option('--goroot',
+    dest = 'goroot',
+    default = None,
+    help = '')
+  parser.add_option('--rebuild-change-table',
+    dest = 'rebuild_change_table',
+    action = 'store_true',
+    help = '')
+  parser.add_option('--reload-clients',
+    dest = 'reload_clients',
+    action = 'store_true',
+    help = '')
+
+  options, args = parser.parse_args()
+
+  myroot = GetProjectRoot()
+  goroot = FindGoRoot(options)
+
+  if goroot is None:
+    sys.stderr.write('Unable to find your go installation, use --goroot')
+    sys.exit(1)
+
+  Start(myroot, goroot, options, glob.glob(os.path.join(myroot, '*.go')))
