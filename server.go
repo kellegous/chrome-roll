@@ -158,7 +158,7 @@ func (s *store) shutdown() {
   s.Conn.Close()
 }
 
-var patternForPatchBy = regexp.MustCompile("Patch by .* <(.*)> on")
+var patternForPatchBy = regexp.MustCompile("[pP]atch by .* <(.*)>")
 var patternForOldLogs = regexp.MustCompile("^\\d{4}-\\d{2}-\\d{2}  .*  <(.*)>")
 
 func isKittenChange(kitten *kitten, author, comment string) bool {
