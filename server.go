@@ -4,6 +4,7 @@ import (
   "crypto/rand"
   "crypto/sha1"
 	"encoding/json"
+  "errors"
   "flag"
 	"fmt"
   "gosqlite.googlecode.com/hg/sqlite"
@@ -26,6 +27,7 @@ const (
 	webkitEarliestRevision int64 = 48167
 	modelDatabaseFile      = "db/webkit.sqlite"
   webkitSvnPollingInterval = 1 // minutes
+  webkitSvnTimeout = 10 // minutes
 )
 
 type kitten struct {
@@ -257,27 +259,35 @@ func (m *model) update() error {
   log.Printf("updating model starting at r%d\n", latestRev)
   defer log.Printf("done\n")
 
-  // todo: do this in the background.
+  // this is some hacky patch up code that I added as I was going out the door.
+  // svn.Log has a tendency to hang forever. That's an issue as there isn't a
+  // timeout in the http lib. So we just mitigate that a bit by invoking the
+  // call in a background go routine.
   c := make(chan interface{})
+
+  // spawn a background routine.
   go func() {
     items, err := m.Svn.Log(latestRev, svn.REV_HEAD, svn.LIMIT_NONE)
     if err != nil {
       c <- err
-      return
+    } else {
+      c <- items
     }
-    c <- items
   }()
 
+  // wait for a response from the background routine for a limited time.
   var items []*svn.LogItem
   select {
-  case m := <- c:
+  // handle a response, either items or an error
+  case m := <-c:
     switch t := m.(type) {
     case []*svn.LogItem:
       items = t
     case error:
       return t
     }
-  case <- time.After(webkitSvnPollingInterval * 60 * 1e9):
+  // oh well, better luck next time we timed out
+  case <- time.After(webkitSvnTimeout * 60 * 1e9):
     return errors.New("Timeout")
   }
 
