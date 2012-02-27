@@ -256,9 +256,29 @@ func (m *model) update() error {
 
   log.Printf("updating model starting at r%d\n", latestRev)
   defer log.Printf("done\n")
-  items, err := m.Svn.Log(latestRev, svn.REV_HEAD, svn.LIMIT_NONE)
-  if err != nil {
-    return err
+
+  // todo: do this in the background.
+  c := make(chan interface{})
+  go func() {
+    items, err := m.Svn.Log(latestRev, svn.REV_HEAD, svn.LIMIT_NONE)
+    if err != nil {
+      c <- err
+      return
+    }
+    c <- items
+  }()
+
+  var items []*svn.LogItem
+  select {
+  case m := <- c:
+    switch t := m.(type) {
+    case []*svn.LogItem:
+      items = t
+    case error:
+      return t
+    }
+  case <- time.After(webkitSvnPollingInterval * 60 * 1e9):
+    return errors.New("Timeout")
   }
 
   for _, item := range items {
